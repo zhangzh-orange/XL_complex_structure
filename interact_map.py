@@ -2,7 +2,7 @@ import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 
-xl_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\COPI_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_COPI.csv")
+xl_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_CORVET.csv")
 xl_df.head()
 
 
@@ -84,19 +84,28 @@ plt.show()
 
 from itertools import combinations
 
-protein_list = ['COPB1',
- 'COPB2',
- 'ARCN1',
- 'ARFGAP2',
- 'COPA',
-#  'COPG2', # g1z1
- 'COPZ1',
- 'COPG1',
- 'COPE',
- 'ARFGAP3',
- 'CCDC115',
- 'TMEM199',
- 'ARF1']
+# protein_list = ['COPB1',
+#  'COPB2',
+#  'ARCN1',
+#  'ARFGAP2',
+#  'COPA',
+# #  'COPG2', # g1z1
+#  'COPZ1',
+#  'COPG1',
+#  'COPE',
+#  'ARFGAP3',
+#  'CCDC115',
+#  'TMEM199',
+#  'ARF1']
+
+# CORVET
+protein_list = ["TGFBRAP1",
+"VPS11",
+"VPS16",
+"VPS18",
+"VPS33A",
+"VPS8"
+]
 
 # 将所有有连接关系的三元组进行结构预测
 triple_complexes = list(combinations(protein_list, 3))
@@ -129,4 +138,4 @@ print(len(triplet_need_to_pred))
 import pandas as pd
 
 df_triplet = pd.DataFrame(triplet_need_to_pred, columns=["p1", "p2", "p3"])
-df_triplet.to_csv(r"N:\08_NK_structure_prediction\data\COPI_complex\triplet_need_to_pred.csv", index=False)
+df_triplet.to_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\triplet_need_to_pred.csv", index=False)

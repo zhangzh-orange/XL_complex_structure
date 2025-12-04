@@ -10,9 +10,10 @@ def find_bracket_k_position(peptide, protein):
     if not m:
         return None  # 没有任何 [X]
     
-    # aa = m.group(1)
-    # if aa != "K":
-    #     return None  # 不是 [K]，直接返回 None
+    aa = m.group(1)
+    if aa != "K":
+        # print(peptide)
+        return None  # 不是 [K]，直接返回 None
 
     aa_index_in_pep = m.start()     # '[' 在序列中的位置 (0-based)
 
@@ -64,13 +65,13 @@ def select_unique_crosslinks(crosslinks):
 
 import pandas as pd
 
-copi_complex_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\COPI_complex/heklopit_pl3017_frd1ppi_sc151_fdr1rp_COPI.csv")
+copi_complex_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_CORVET.csv")
 # print(copi_complex_df.head())
 
 
 from Bio import SeqIO
 
-copi_fasta_path = r"N:\08_NK_structure_prediction\data\COPI_complex\COPI.fasta"
+copi_fasta_path = r"N:\08_NK_structure_prediction\data\CORVET_complex\CORVET.fasta"
 
 copi_seqs_dict = {}
 with open(copi_fasta_path) as handle:
@@ -82,12 +83,12 @@ with open(copi_fasta_path) as handle:
 # print(copi_seqs_dict)
 
 
-protein_gene_df = pd.read_excel(r"N:\08_NK_structure_prediction\data\COPI_complex\COPI_gene_list.xlsx",sheet_name=0)
+protein_gene_df = pd.read_excel(r"N:\08_NK_structure_prediction\data\CORVET_complex\CORVET_gene_list.xlsx",sheet_name=0)
 gene_protein_map = protein_gene_df.set_index("Gene")["Entry"].to_dict()
 # print(gene_protein_map)
 
 # 读取蛋白三元组
-prot_triplet_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\COPI_complex\triplet_need_to_pred.csv")
+prot_triplet_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\triplet_need_to_pred.csv")
 triplet_list = [tuple(row) for row in prot_triplet_df[["p1", "p2", "p3"]].values]
 # print(triplet_list)
 
@@ -101,7 +102,7 @@ def make_crosslink(pair_label1, p1_seq, pair_label2, p2_seq, pepA, pepB):
 
 for sample_time in range(3):
     for (p1, p2, p3) in triplet_list:
-        key = f"{p1}_{p2}_{p3}"
+        key = f"{p1}_{p2}_{p3}_{sample_time}"
         # print(key)
         json_files[key] = {
             "name": key,
@@ -136,8 +137,11 @@ for sample_time in range(3):
                 if not cl:
                     return
 
-                # cl 例子: [["A", 11], ["B", 46]]
-                # 转成哈希化 key 用来去重
+                # cl example: [["A", 11], ["B", 46]]
+                # If either side contains None → do NOT append
+                if cl[0][1] is None or cl[1][1] is None:
+                    return
+                
                 key = (tuple(cl[0]), tuple(cl[1]))
 
                 if key not in seen_keys:
@@ -188,7 +192,7 @@ for sample_time in range(3):
     # print(json_files)
     import json
     for key in json_files.keys():
-        file_name = rf"N:\08_NK_structure_prediction\data\COPI_complex\jsons\{key}_{sample_time}.json"
+        file_name = rf"N:\08_NK_structure_prediction\data\CORVET_complex\jsons\{key}.json"
         data = json_files[key]
         with open(file_name, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
