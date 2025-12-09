@@ -2,7 +2,7 @@ import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 
-xl_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_CORVET.csv")
+xl_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\LRBAandSNARE\heklopit_pl3017_frd1ppi_sc151_fdr1rp_LRBAandSNARE.csv")
 xl_df.head()
 
 
@@ -99,22 +99,33 @@ from itertools import combinations
 #  'ARF1']
 
 # CORVET
-protein_list = ["TGFBRAP1",
-"VPS11",
-"VPS16",
-"VPS18",
-"VPS33A",
-"VPS8"
+# protein_list = ["TGFBRAP1",
+# "VPS11",
+# "VPS16",
+# "VPS18",
+# "VPS33A",
+# "VPS8"
+# ]
+
+# LRBAandSNARE
+protein_list = [
+    "LRBA",
+"STX7",
+"STX12",
+
 ]
 
-# 将所有有连接关系的三元组进行结构预测
+# 所有二元组
+binary_pairs = list(combinations(protein_list, 2))
+# 所有三元组
 triple_complexes = list(combinations(protein_list, 3))
-# triple_complexes
+
 
 # 检测三元组在相互作用组中的连接（拆分为二元组）
 ppi_set = {frozenset(ppi) for ppi in G.edges()}
 
-triplet_need_to_pred = []
+triplet_in_ppi = []
+binary_pairs_in_ppi = []           # 所有二元组中存在于 PPI 的
 
 for triplet in triple_complexes:
     p1, p2, p3 = triplet
@@ -125,17 +136,26 @@ for triplet in triple_complexes:
         frozenset((p1, p3)),
         frozenset((p2, p3)),
     ]
+
+    # 二元组中在 PPI 的
+    for pair in pairs:
+        if pair in ppi_set:
+            binary_pairs_in_ppi.append(tuple(pair))  # 保存存在于 PPI 的二元组
     
     # 统计三元组中有几对在 PPI 中
     link_count = sum(pair in ppi_set for pair in pairs)
     
     if link_count >= 2:
-        triplet_need_to_pred.append(triplet)
+        triplet_in_ppi.append(triplet)
 
 print(len(triple_complexes))
-print(len(triplet_need_to_pred))
+print(len(triplet_in_ppi))
 
 import pandas as pd
 
-df_triplet = pd.DataFrame(triplet_need_to_pred, columns=["p1", "p2", "p3"])
-df_triplet.to_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\triplet_need_to_pred.csv", index=False)
+df_triplet = pd.DataFrame(triplet_in_ppi, columns=["p1", "p2", "p3"])
+# df_triplet.to_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\triplet_need_to_pred.csv", index=False)
+
+# ② 在 PPI 网络中存在的二元组
+df_binary_ppi = pd.DataFrame(set(binary_pairs_in_ppi), columns=["p1", "p2"])
+df_binary_ppi.to_csv(r"N:\08_NK_structure_prediction\data\LRBAandSNARE\binary_pairs_in_ppi.csv", index=False)

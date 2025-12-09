@@ -1,198 +1,260 @@
+import re
+import json
+import random
+from itertools import combinations
+from pathlib import Path
 
-def find_bracket_k_position(peptide, protein):
-    import re
+import pandas as pd
+from Bio import SeqIO
 
-    # 去除 peptide 中所有空格
+
+# ===============================================================
+# 1. 工具函数：解析肽段、选择唯一 crosslink
+# ===============================================================
+
+def find_bracket_k_position(peptide: str, protein: str):
+    """找到肽段 peptide 中 [K] 在 protein 上的定位（1-based）"""
     pep_no_space = peptide.replace(" ", "")
-
-    # 匹配 [K]，其他情况直接 None
     m = re.search(r"\[([A-Z])\]", pep_no_space)
     if not m:
-        return None  # 没有任何 [X]
+        return None
     
     aa = m.group(1)
     if aa != "K":
-        # print(peptide)
-        return None  # 不是 [K]，直接返回 None
+        return None
 
-    aa_index_in_pep = m.start()     # '[' 在序列中的位置 (0-based)
-
-    # 去除括号
+    aa_index_in_pep = m.start()
     clean_pep = re.sub(r"\[([A-Z])\]", r"\1", pep_no_space)
 
-    # 查找肽段位置
     start = protein.find(clean_pep)
     if start == -1:
-        return None  # 肽段无法定位到蛋白
+        return None
 
-    # 计算蛋白上的氨基酸位置 (0-based → 1-based)
-    aa_pos_1 = start + aa_index_in_pep + 1
+    return start + aa_index_in_pep + 1  # 1-based
 
-    return aa_pos_1
-
-import random
 
 def select_unique_crosslinks(crosslinks):
-    """
-    crosslinks: 双层列表，例如 [[["A", 291], ["B", 336]], ...]
-    
-    返回：
-        - 保证每个端点只出现一次
-        - 随机性，每次运行结果可能不同
-    """
-    crosslinks_shuffled = crosslinks.copy()
-    random.shuffle(crosslinks_shuffled)  # 打乱顺序增加随机性
+    """确保每个端点（A,B,C）只能出现一次"""
+    shuffled = crosslinks.copy()
+    random.shuffle(shuffled)
 
     chosen = []
-    used_endpoints = set()
+    used = set()
 
-    for cl in crosslinks_shuffled:
-        e1 = tuple(cl[0])
-        e2 = tuple(cl[1])
-
-        # 如果任意一个端点已被占用，则跳过
-        if e1 in used_endpoints or e2 in used_endpoints:
+    for cl in shuffled:
+        p1 = tuple(cl[0])
+        p2 = tuple(cl[1])
+        if p1 in used or p2 in used:
             continue
 
-        # 两端都未使用 → append 并标记端点
         chosen.append(cl)
-        used_endpoints.add(e1)
-        used_endpoints.add(e2)
+        used.add(p1)
+        used.add(p2)
 
     return chosen
 
 
+# ===============================================================
+# 2. JSON 构建函数（支持 2mer 和 3mer）
+# ===============================================================
 
-import pandas as pd
-
-copi_complex_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_CORVET.csv")
-# print(copi_complex_df.head())
-
-
-from Bio import SeqIO
-
-copi_fasta_path = r"N:\08_NK_structure_prediction\data\CORVET_complex\CORVET.fasta"
-
-copi_seqs_dict = {}
-with open(copi_fasta_path) as handle:
-    for record in SeqIO.parse(handle, "fasta"):
-        protein_id = str(record.id).split("|")[1]
-        seq = str(record.seq)
-        copi_seqs_dict[protein_id] = seq
-
-# print(copi_seqs_dict)
-
-
-protein_gene_df = pd.read_excel(r"N:\08_NK_structure_prediction\data\CORVET_complex\CORVET_gene_list.xlsx",sheet_name=0)
-gene_protein_map = protein_gene_df.set_index("Gene")["Entry"].to_dict()
-# print(gene_protein_map)
-
-# 读取蛋白三元组
-prot_triplet_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\triplet_need_to_pred.csv")
-triplet_list = [tuple(row) for row in prot_triplet_df[["p1", "p2", "p3"]].values]
-# print(triplet_list)
-
-json_files = {}
-
-def make_crosslink(pair_label1, p1_seq, pair_label2, p2_seq, pepA, pepB):
-    """生成一个 residue_pair 结构"""
-    return [ [pair_label1, find_bracket_k_position(pepA, p1_seq)],
-              [pair_label2, find_bracket_k_position(pepB, p2_seq)] ]
+def init_json_template(key, proteins):
+    """
+    proteins: dict like {"A": seqA, "B": seqB, ...}
+    """
+    seq_block = [{"protein": {"id": tag, "sequence": seq}}
+                 for tag, seq in proteins.items()]
+    
+    return {
+        "name": key,
+        "modelSeeds": [1],
+        "sequences": seq_block,
+        "dialect": "alphafold3",
+        "version": 1,
+        "crosslinks": [{"name": "azide-A-DSBSO", "residue_pairs": []}]
+    }
 
 
-for sample_time in range(3):
-    for (p1, p2, p3) in triplet_list:
-        key = f"{p1}_{p2}_{p3}_{sample_time}"
-        # print(key)
-        json_files[key] = {
-            "name": key,
-            "modelSeeds": [1],
-            "sequences": [
-                {"protein":{"id": "A", "sequence": copi_seqs_dict[gene_protein_map[p1]]}},
-                {"protein":{"id": "B", "sequence": copi_seqs_dict[gene_protein_map[p2]]}},
-                {"protein":{"id": "C", "sequence": copi_seqs_dict[gene_protein_map[p3]]}},
-            ],
-            "dialect": "alphafold3",
-            "version": 1,
-            "crosslinks": [{"name": "azide-A-DSBSO", "residue_pairs": []}]
-        }
-        
-        crosslinks = json_files[key]["crosslinks"][0]["residue_pairs"]
-
-        seen_keys = set()
-        
-        for index, row in copi_complex_df.iterrows():
-            a_gene, b_gene = row["gene_a"], row["gene_b"]
-            pepA, pepB = row["pepA"], row["pepB"]
-
-            # 任意字段为空 → 跳过
-            if any(pd.isna(v) or str(v).strip()=="" for v in [a_gene, b_gene, pepA, pepB]):
-                continue
-
-            a_genes = {g.strip() for g in a_gene.split(";")}
-            b_genes = {g.strip() for g in b_gene.split(";")}
-
-            def safe_append(*args):
-                cl = make_crosslink(*args)
-                if not cl:
-                    return
-
-                # cl example: [["A", 11], ["B", 46]]
-                # If either side contains None → do NOT append
-                if cl[0][1] is None or cl[1][1] is None:
-                    return
-                
-                key = (tuple(cl[0]), tuple(cl[1]))
-
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    crosslinks.append(cl)
-
-            # p1 - p2
-            if p1 in a_genes and p2 in b_genes:
-                safe_append("A", copi_seqs_dict[gene_protein_map[p1]],
-                                "B", copi_seqs_dict[gene_protein_map[p2]],
-                                pepA, pepB)
-
-            elif p2 in a_genes and p1 in b_genes:
-                safe_append(
-                                "A", copi_seqs_dict[gene_protein_map[p1]],
-                                "B", copi_seqs_dict[gene_protein_map[p2]], pepB,
-                                pepA)
-
-            # p1 - p3
-            elif p1 in a_genes and p3 in b_genes:
-                safe_append("A", copi_seqs_dict[gene_protein_map[p1]],
-                                "C", copi_seqs_dict[gene_protein_map[p3]],
-                                pepA, pepB)
-
-            elif p3 in a_genes and p1 in b_genes:
-                safe_append(
-                                "A", copi_seqs_dict[gene_protein_map[p1]],
-                                "C", copi_seqs_dict[gene_protein_map[p3]], pepB,
-                                pepA)
-
-            # p2 - p3
-            elif p2 in a_genes and p3 in b_genes:
-                safe_append("B", copi_seqs_dict[gene_protein_map[p2]],
-                                "C", copi_seqs_dict[gene_protein_map[p3]],
-                                pepA, pepB)
-
-            elif p3 in a_genes and p2 in b_genes:
-                safe_append(
-                                "B", copi_seqs_dict[gene_protein_map[p2]],
-                                "C", copi_seqs_dict[gene_protein_map[p3]], pepB,
-                                pepA)
-                
-        crosslinks[:] = select_unique_crosslinks(crosslinks)
-        # break
+def make_crosslink(tag1, seq1, tag2, seq2, pepA, pepB):
+    """生成 residue_pair 结构"""
+    return [
+        [tag1, find_bracket_k_position(pepA, seq1)],
+        [tag2, find_bracket_k_position(pepB, seq2)]
+    ]
 
 
-    # 输出
-    # print(json_files)
-    import json
-    for key in json_files.keys():
-        file_name = rf"N:\08_NK_structure_prediction\data\CORVET_complex\jsons\{key}.json"
-        data = json_files[key]
-        with open(file_name, "w", encoding="utf-8") as f:
+# ===============================================================
+# 3. 交互判断函数（支持 2mer / 3mer）
+# ===============================================================
+
+def handle_interaction(
+    pA, pB, a_genes, b_genes,
+    seq_map, pepA, pepB,
+    tagA, tagB,
+    crosslinks, seen
+):
+    """
+    pA, pB: protein names
+    tagA, tagB: "A","B","C"
+    """
+    def safe_append(tag1, seq1, tag2, seq2, pepX, pepY):
+        cl = make_crosslink(tag1, seq1, tag2, seq2, pepX, pepY)
+        if cl[0][1] is None or cl[1][1] is None:
+            return
+
+        key = (tuple(cl[0]), tuple(cl[1]))
+        if key not in seen:
+            seen.add(key)
+            crosslinks.append(cl)
+
+    # forward pA → pB
+    if pA in a_genes and pB in b_genes:
+        safe_append(tagA, seq_map[pA], tagB, seq_map[pB], pepA, pepB)
+
+    # reverse pB → pA
+    elif pB in a_genes and pA in b_genes:
+        safe_append(tagA, seq_map[pA], tagB, seq_map[pB], pepB, pepA)
+
+
+# ===============================================================
+# 4. 主流程（统一二元组 / 三元组）
+# ===============================================================
+
+def prepare_multimer_jsons(
+    name,                            # "LRBAandSNARE" / "CORVET"
+    complex_type,                    # "dimer" or "trimer"
+    raw_crosslink_csv,               # raw XL csv
+    fasta_file,                      # protein FASTA
+    gene_list_excel,                 # Gene → UniProt
+    pair_or_triplet_csv,             # "binary_pairs_in_ppi.csv" or "triplet_need_to_pred.csv"
+    output_dir,                      # output JSON directory
+    sample_times=3
+):
+
+    print(f"=== Running: {name} ({complex_type}) ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # ---------------------------------------
+    # Load data
+    # ---------------------------------------
+    xl_df = pd.read_csv(raw_crosslink_csv)
+
+    gene_map = pd.read_excel(gene_list_excel).set_index("Gene")["Entry"].to_dict()
+
+    seq_map = {}
+    with open(fasta_file) as f:
+        for rec in SeqIO.parse(f, "fasta"):
+            prot_id = rec.id.split("|")[1]
+            seq_map[prot_id] = str(rec.seq)
+
+    # get pairs or triplets
+    prot_df = pd.read_csv(pair_or_triplet_csv)
+    if complex_type == "dimer":
+        complexes = [tuple(row) for row in prot_df[["p1", "p2"]].values]
+    else:
+        complexes = [tuple(row) for row in prot_df[["p1", "p2", "p3"]].values]
+
+    # ---------------------------------------
+    # Iterate
+    # ---------------------------------------
+    json_files = {}
+
+    for sample_time in range(sample_times):
+        for comp in complexes:
+
+            # ====== 构造 key ======
+            key = "_".join(list(comp) + [str(sample_time)])
+
+            # ====== 生成 tag → protein map ======
+            tags = ["A", "B", "C"]
+            prot_map = {}
+            for t, p in zip(tags, comp):
+                prot_map[t] = seq_map[gene_map[p]]
+
+            # ====== JSON 初始化 ======
+            json_files[key] = init_json_template(key, prot_map)
+            crosslinks = json_files[key]["crosslinks"][0]["residue_pairs"]
+
+            # ====== crosslink 搜索 ======
+            seen = set()
+
+            for _, row in xl_df.iterrows():
+                # 跳过空值
+                if any(pd.isna(v) or str(v).strip() == "" for v in [row.gene_a, row.gene_b, row.pepA, row.pepB]):
+                    continue
+
+                a_genes = {g.strip() for g in row.gene_a.split(";")}
+                b_genes = {g.strip() for g in row.gene_b.split(";")}
+
+                pepA = row.pepA
+                pepB = row.pepB
+
+                # ========== dimer ==========
+                if complex_type == "dimer":
+                    p1, p2 = comp
+                    handle_interaction(
+                        p1, p2, a_genes, b_genes,
+                        seq_map={p: seq_map[gene_map[p]] for p in comp},
+                        pepA=pepA, pepB=pepB,
+                        tagA="A", tagB="B",
+                        crosslinks=crosslinks, seen=seen
+                    )
+
+                # ========== trimer ==========
+                else:
+                    p1, p2, p3 = comp
+                    seq_local = {p: seq_map[gene_map[p]] for p in comp}
+
+                    # p1-p2
+                    handle_interaction(p1, p2, a_genes, b_genes, seq_local, pepA, pepB, "A", "B",
+                                       crosslinks, seen)
+                    # p1-p3
+                    handle_interaction(p1, p3, a_genes, b_genes, seq_local, pepA, pepB, "A", "C",
+                                       crosslinks, seen)
+                    # p2-p3
+                    handle_interaction(p2, p3, a_genes, b_genes, seq_local, pepA, pepB, "B", "C",
+                                       crosslinks, seen)
+
+            # 过滤唯一 crosslinks
+            json_files[key]["crosslinks"][0]["residue_pairs"] = \
+                select_unique_crosslinks(crosslinks)
+
+    # ---------------------------------------
+    # Save JSON
+    # ---------------------------------------
+    for key, data in json_files.items():
+        out = Path(output_dir) / f"{key}.json"
+        with open(out, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
+
+    print(f"✔ Completed {name}: {len(json_files)} JSON files saved to {output_dir}")
+
+
+# ===============================================================
+# 5. 调用示例（LRBA/SNARE 与 CORVET 都可跑）
+# ===============================================================
+
+if __name__ == "__main__":
+
+    # ====== LRBA + SNARE (dimer) ======
+    # prepare_multimer_jsons(
+    #     name="LRBAandSNARE",
+    #     complex_type="dimer",
+    #     raw_crosslink_csv=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\heklopit_pl3017_frd1ppi_sc151_fdr1rp_LRBAandSNARE.csv",
+    #     fasta_file=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\LRBAandSNARE.fasta",
+    #     gene_list_excel=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\LRBAandSNARE_gene_list.xlsx",
+    #     pair_or_triplet_csv=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\binary_pairs_in_ppi.csv",
+    #     output_dir=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\jsons_2mer",
+    # )
+
+    # # ====== CORVET (trimer) ======
+    prepare_multimer_jsons(
+        name="CORVET",
+        complex_type="trimer",
+        raw_crosslink_csv=r"N:\08_NK_structure_prediction\data\CORVET_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_CORVET.csv",
+        fasta_file=r"N:\08_NK_structure_prediction\data\CORVET_complex\CORVET.fasta",
+        gene_list_excel=r"N:\08_NK_structure_prediction\data\CORVET_complex\CORVET_gene_list.xlsx",
+        pair_or_triplet_csv=r"N:\08_NK_structure_prediction\data\CORVET_complex\triplet_need_to_pred.csv",
+        output_dir=r"N:\08_NK_structure_prediction\data\CORVET_complex\jsons_3mer",
+    )
+    pass
