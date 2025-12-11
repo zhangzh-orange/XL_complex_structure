@@ -1,12 +1,3 @@
-#! python3
-# -*- encoding: utf-8 -*-
-# ===================================
-# File    :   mcts.py
-# Time    :   2025/12/08 12:27:15
-# Author  :   Zehong Zhang
-# Contact :   zhang@fmp-berlin.de
-# ===================================
-
 import argparse
 import sys
 import os
@@ -20,16 +11,6 @@ from collections import Counter, defaultdict
 from Bio.SVDSuperimposer import SVDSuperimposer
 import pdb
 
-# TODO: 1. Read inputs:
-# parser = argparse.ArgumentParser(description = '''Find optimal paths by Monte Carlo Tree Search.''')
-# parser.add_argument('--network', nargs=1, type= str, default=sys.stdin, help = 'Path to csv containing pairwise interactions.')
-# parser.add_argument('--pairdir', nargs=1, type= str, default=sys.stdin, help = 'Path to dir containing all connecting pairs')
-# parser.add_argument('--plddt_dir', nargs=1, type= str, default=sys.stdin, help = 'Path to dir containing plDDT scores for each complex')
-# parser.add_argument('--useqs', nargs=1, type= str, default=sys.stdin, help = 'CSV with unique seqs')
-# parser.add_argument('--chain_seqs', nargs=1, type= str, default=sys.stdin, help = 'CSV with mapping btw useqs and chains')
-# parser.add_argument('--outdir', nargs=1, type= str, default=sys.stdin, help = 'Where to write all complexes')
-
-##############FUNCTIONS##############
 
 def parse_atm_record(line):
     """
@@ -230,7 +211,8 @@ def read_cif(cif_file):
                     continue  # 格式异常跳过
 
                 # 保存原子行（构造模拟 PDB 行）
-                pdb_line = f"ATOM  {record['id']:>5} {atm_name:<4}{res_name:>3} {chain}{res_no:>4}    {x:8.3f}{y:8.3f}{z:8.3f}{occ:6.2f}{B:6.2f}\n"
+                pdb_line = f"ATOM  {record['id']:>5} {atm_name:<4} {res_name:>3} {chain} {res_no:>4} " \
+           f"{x:8.3f} {y:8.3f} {z:8.3f} {occ:6.2f} {B:6.2f}\n"
                 pdb_chains[chain].append(pdb_line)
 
                 # 保存坐标
@@ -249,130 +231,51 @@ def read_cif(cif_file):
     return pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds
 
 
-def check_overlaps(cpath_coords,cpath_CA_inds,n_coords,n_CA_inds):
-    '''Check assembly overlaps of new chain
+def write_cif(output_file, pdb_chains):
+    """
+    将 `pdb_chains`（伪 PDB 格式）写入一个新的 mmCIF 文件的 atom_site 表中。
+    """
 
-    Parameters
-    ----------
-    cpath_coords : list of np.ndarray
-        Coordinates of all atoms in currently assembled chains.
-        Each element corresponds to one chain: [chain1_coords, chain2_coords, ...]
-        Shape per chain: (n_atoms_i, 3) where 3 represents (x, y, z) coordinates
-    
-    cpath_CA_inds : list of np.ndarray
-        Indices of alpha-carbon (Cα) atoms for each assembled chain.
-        Used to extract backbone atoms from full coordinate sets.
-        Example: [[0, 1, 4, ...], [0, 1, 4, ...], ...] where indices point to Cα positions
-    
-    n_coords : np.ndarray
-        Coordinates of all atoms in the new chain to be added.
-        Shape: (n_atoms_new, 3) - all atom positions for the candidate chain
-    
-    n_CA_inds : np.ndarray
-        Indices of alpha-carbon (Cα) atoms in the new chain.
-        Used to extract backbone from the new chain's full atom set.
-        Example: [0, 1, 4, 5, ...] indices corresponding to Cα atoms
-    '''
-    #Check CA overlap
-    n_CAs = n_coords[n_CA_inds] #New chain CAs
-    l1 = (len(n_CAs))
-    #Go through all previous CAs and compare
+    atom_site_fields = [
+        "_atom_site.group_PDB",
+        "_atom_site.id",
+        "_atom_site.type_symbol",
+        "_atom_site.label_atom_id",
+        "_atom_site.label_alt_id",
+        "_atom_site.label_comp_id",
+        "_atom_site.label_asym_id",
+        "_atom_site.label_seq_id",
+        "_atom_site.Cartn_x",
+        "_atom_site.Cartn_y",
+        "_atom_site.Cartn_z",
+        "_atom_site.occupancy",
+        "_atom_site.B_iso_or_equiv"
+    ]
 
-    for i in range(len(cpath_coords)):
-        p_CAs = cpath_coords[i][cpath_CA_inds[i]]
-        #Calc 2-norm
-        mat = np.append(n_CAs, p_CAs,axis=0)
-        a_min_b = mat[:,np.newaxis,:] -mat[np.newaxis,:,:]
-        dists = np.sqrt(np.sum(a_min_b.T ** 2, axis=0)).T
-        contact_dists = dists[l1:,:l1]
-        overlap = np.argwhere(contact_dists<=5) #5 Å threshold
-        if overlap.shape[0]>0.5*min(l1,len(p_CAs)): #If over 50% overlap
-            return True
+    with open(output_file, "w") as f:
 
-    return False
+        f.write("loop_\n")
+        for col in atom_site_fields:
+            f.write(col + "\n")
 
+        atom_id = 1
 
-def score_interfaces(path_coords, path_CB_inds, path_plddt):
-    '''Score all interfaces in the current complex
-    '''
+        for chain_id, lines in pdb_chains.items():
+            for line in lines:
 
-    interfaces_score = 0
-    chain_inds = np.arange(len(path_coords))
-    #Get interfaces per chain
-    for i in chain_inds:
-        chain_coords = path_coords[i]
-        chain_CB_inds = path_CB_inds[i]
-        l1 = len(chain_CB_inds)
-        chain_CB_coords = chain_coords[chain_CB_inds]
-        chain_plddt = path_plddt[i]
-        
-        # 获取除当前链i外的所有其他链索引
-        other_chains = np.setdiff1d(chain_inds, i)
-        for int_i in other_chains:
-            int_chain_CB_coords = path_coords[int_i][path_CB_inds[int_i]]
-            int_chain_plddt = path_plddt[int_i]
-            #Calc 2-norm
-            mat = np.append(chain_CB_coords,int_chain_CB_coords,axis=0)
-            a_min_b = mat[:,np.newaxis,:] -mat[np.newaxis,:,:]
-            dists = np.sqrt(np.sum(a_min_b.T ** 2, axis=0)).T
-            contact_dists = dists[:l1,l1:]
-            contacts = np.argwhere(contact_dists<=8)
-            #The first axis contains the contacts from chain 1
-            #The second the contacts from chain 2
-            if contacts.shape[0]>0:
-                av_if_plDDT =  np.concatenate((chain_plddt[contacts[:,0]], int_chain_plddt[contacts[:,1]])).mean()
-                interfaces_score +=  np.log10(contacts.shape[0]+1)*av_if_plDDT
-    
-    return interfaces_score
+                parts = line.split()
 
+                atm_name = parts[2]
+                res_name = parts[3]
+                chain = parts[4]                 # e.g., 'A'
+                res_no = int(parts[5])           # e.g., '10'
+                x, y, z = map(float, parts[6:9])
+                occ = float(parts[9])
+                B = float(parts[10])
+                element = atm_name[0]
 
-def read_crosslinks(csv_path):
-    pass
-
-def score_crosslinks(path_coords, path_CA_inds):
-    # TODO: 计算输入complex中所有crosslink的满足度，crosslink满足数目越多，打分越高
-    # 取CA算距离
-    crosslinks = {
-        "start_CA_chains":[],
-        "start_CA_inds":[],
-        "end_CA_chains":[],
-        "end_CA_inds":[]
-        }
-    crosslinker_length = 35 # A 限制距离
-    total_links = len(crosslinks["start_CA_inds"]) + 1e-6
-
-    satisfied_links = 0
-    for s,e in zip(crosslinks["start_CA_inds"],crosslinks["end_CA_inds"]):
-        # 计算欧几里得距离
-        # 定义两个三维点
-        point1 = np.array([1, 2, 3])
-        point2 = np.array([4, 6, 8])
-
-        # 计算差值向量
-        diff = point1 - point2
-
-        # 计算欧几里得距离
-        distance = np.sqrt(np.sum(diff**2))
-        if distance <= crosslinker_length:
-            satisfied_links += 1
-    crosslinks_score = satisfied_links/total_links
-    return crosslinks_score
-
-def score_complex():
-    # TODO: complex_score = interfaces_score * crosslinks_score
-    # return complex_score
-    pass
-
-
-class MonteCarloTreeSearchNode():
-    pass
-
-if __name__ == "__main__":
-    # pdb_file = r"N:\08_NK_structure_prediction\XL_complex_structure\data\6PBG.pdb"
-    # pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_file)
-    pdb_file = r"N:\08_NK_structure_prediction\XL_complex_structure\data\copa_cope_arfgap3_2_model.cif"
-    pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_cif(pdb_file)
-    print(chain_coords["A"][:10])
-    # print(chain_coords)
-    # print(chain_CA_inds)
-    # print(chain_CB_inds)
+                f.write(
+                    f"ATOM {atom_id} {element} {atm_name} . {res_name} {chain} {res_no} "
+                    f"{x:.3f} {y:.3f} {z:.3f} {occ:.2f} {B:.2f}\n"
+                )
+                atom_id += 1

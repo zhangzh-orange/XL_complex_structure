@@ -2,6 +2,7 @@ import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 from itertools import combinations
+import os
 
 
 # -------------------------------------------------------------
@@ -109,8 +110,8 @@ def analyze_complexes(G: nx.Graph, protein_list: list[str]):
 def main():
 
     # ====== 文件路径 ======
-    input_path = r"N:\08_NK_structure_prediction\data\LRBAandSNARE\heklopit_pl3017_frd1ppi_sc151_fdr1rp_LRBAandSNARE.csv"
-    out_binary_path = r"N:\08_NK_structure_prediction\data\LRBAandSNARE\binary_pairs_in_ppi.csv"
+    input_path = r"N:\08_NK_structure_prediction\data\Exocyst_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_Exocyst.csv"
+    out_folder = r"N:\08_NK_structure_prediction\data\Exocyst_complex"
 
     # ====== 读取数据并构建网络 ======
     df = load_interaction_data(input_path)
@@ -121,23 +122,28 @@ def main():
     print("Nodes needing cleanup:", dirty_nodes)
 
     # ====== 清洗节点名称 ======
-    # manual_map = {
-    #     'ASS1; ARCN1': 'ARCN1',
-    #     'COPG2; COPG1': 'COPG1',
-    #     'ARF4; ARF6; ARF1; ARF5': 'ARF1'
-    # }
-    # G = clean_node_names(G, manual_map)
+    manual_map = {
+        'RAB11B; RAB11A': 'RAB11B',
+        'EXOC6; EXOC6': 'EXOC6',
+        'EXOC6; EXOC6B': 'EXOC6',
+        'EXOC8; EXOC8': 'EXOC8',
+        'EXOC4; EXOC4':'EXOC4'
+    }
+    G = clean_node_names(G, manual_map)
 
     # ====== 绘图 ======
     plot_ppi_network(G, "COPI Complex PPI Network (Cleaned Names)")
 
     # ====== 复合体分析 ======
-    protein_list = ["LRBA", "STX7", "STX12"]
+    protein_list = ["EXOC1", "EXOC2", "EXOC3","EXOC4","EXOC5","EXOC6","EXOC7","EXOC8"]
     binary_pairs_in_ppi, triplet_in_ppi = analyze_complexes(G, protein_list)
 
     # ====== 输出结果 ======
     df_binary_ppi = pd.DataFrame(set(binary_pairs_in_ppi), columns=["p1", "p2"])
-    df_binary_ppi.to_csv(out_binary_path, index=False)
+    df_binary_ppi.to_csv(os.path.join(out_folder,"binary_pairs_in_ppi.csv"), index=False)
+
+    df_triplet_ppi = pd.DataFrame(set(triplet_in_ppi), columns=["p1", "p2", "p3"])
+    df_triplet_ppi.to_csv(os.path.join(out_folder,"triplet_need_to_pred.csv"), index=False)
 
     print(f"Total triplets: {len(list(combinations(protein_list, 3)))}")
     print(f"Triplets found in PPI: {len(triplet_in_ppi)}")

@@ -7,7 +7,7 @@
 # Contact :   zhang@fmp-berlin.de
 # ===================================
 
-# TODO: 1. 构建相互作用图
+# TODO: 1. 构建相互作用图 (先complex，再interactor)
 
 # TODO: 2. 子组件预测（先组装已知的complex，再加入interactors）
 # Alphafold3依次预测3mer，如报错，则预测2mer

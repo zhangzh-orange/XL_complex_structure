@@ -121,7 +121,6 @@ def handle_interaction(
 # ===============================================================
 
 def prepare_multimer_jsons(
-    name,                            # "LRBAandSNARE" / "CORVET"
     complex_type,                    # "dimer" or "trimer"
     raw_crosslink_csv,               # raw XL csv
     fasta_file,                      # protein FASTA
@@ -131,7 +130,7 @@ def prepare_multimer_jsons(
     sample_times=3
 ):
 
-    print(f"=== Running: {name} ({complex_type}) ===")
+    print(f"=== Running: {complex_type} ===")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # ---------------------------------------
@@ -227,7 +226,7 @@ def prepare_multimer_jsons(
         with open(out, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
-    print(f"✔ Completed {name}: {len(json_files)} JSON files saved to {output_dir}")
+    print(f"✔ Completed: {len(json_files)} JSON files saved to {output_dir}")
 
 
 # ===============================================================
@@ -236,25 +235,23 @@ def prepare_multimer_jsons(
 
 if __name__ == "__main__":
 
-    # ====== LRBA + SNARE (dimer) ======
+    # ====== dimer ======
     # prepare_multimer_jsons(
-    #     name="LRBAandSNARE",
     #     complex_type="dimer",
     #     raw_crosslink_csv=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\heklopit_pl3017_frd1ppi_sc151_fdr1rp_LRBAandSNARE.csv",
-    #     fasta_file=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\LRBAandSNARE.fasta",
+    #     fasta_file=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\LRBAandSNARE_small.fasta",
     #     gene_list_excel=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\LRBAandSNARE_gene_list.xlsx",
     #     pair_or_triplet_csv=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\binary_pairs_in_ppi.csv",
     #     output_dir=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\jsons_2mer",
     # )
 
-    # # ====== CORVET (trimer) ======
+    # # ====== trimer ======
     prepare_multimer_jsons(
-        name="CORVET",
         complex_type="trimer",
-        raw_crosslink_csv=r"N:\08_NK_structure_prediction\data\CORVET_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_CORVET.csv",
-        fasta_file=r"N:\08_NK_structure_prediction\data\CORVET_complex\CORVET.fasta",
-        gene_list_excel=r"N:\08_NK_structure_prediction\data\CORVET_complex\CORVET_gene_list.xlsx",
-        pair_or_triplet_csv=r"N:\08_NK_structure_prediction\data\CORVET_complex\triplet_need_to_pred.csv",
-        output_dir=r"N:\08_NK_structure_prediction\data\CORVET_complex\jsons_3mer",
+        raw_crosslink_csv=r"N:\08_NK_structure_prediction\data\Exocyst_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_Exocyst.csv",
+        fasta_file=r"N:\08_NK_structure_prediction\data\Exocyst_complex\Exocyst.fasta",
+        gene_list_excel=r"N:\08_NK_structure_prediction\data\Exocyst_complex\Exocyst_gene_list.xlsx",
+        pair_or_triplet_csv=r"N:\08_NK_structure_prediction\data\Exocyst_complex\triplet_need_to_pred.csv",
+        output_dir=r"N:\08_NK_structure_prediction\data\Exocyst_complex\jsons_3mer",
     )
     pass
