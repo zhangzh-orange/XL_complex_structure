@@ -229,10 +229,6 @@ def prepare_multimer_jsons(
     print(f"✔ Completed: {len(json_files)} JSON files saved to {output_dir}")
 
 
-# ===============================================================
-# 5. 调用示例（LRBA/SNARE 与 CORVET 都可跑）
-# ===============================================================
-
 if __name__ == "__main__":
 
     # ====== dimer ======

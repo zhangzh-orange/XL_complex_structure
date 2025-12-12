@@ -478,38 +478,6 @@ def find_paths(edges, sources, pairdir, plddt_dir, chain_lens, outdir):
     return best_path
 
 
-# def find_paths(edges, sources, pairdir, plddt_dir, chain_lens, outdir):
-#     '''Find all paths that visits all nodes fulfilling the criteria:
-#     No overlapping chains (50% of shortest chain's CAs within 5 Å btw two chains)
-#     '''
-
-#     #Get all nodes
-#     nodes = np.unique(edges)
-#     num_nodes = len(nodes)
-#     #Run Monte Carlo Tree Search
-#     #Read source - start at chain A
-#     sps = edges[np.argwhere(edges=='A')[:,0]][0]
-#     ssr = sources[np.argwhere(edges=='A')[:,0]][0]
-#     pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pairdir+ssr+'_'+sps[0]+'-'+ssr+'_'+sps[1]+'.pdb')
-#     #plDDT
-#     with open(plddt_dir + ssr + '_confidences.json', 'r') as f:
-#         conf = json.load(f)
-
-#     source_plDDT = np.array(conf['atom_plddts'])
-#     si = 0
-#     for p_chain in ssr.split('_')[-1]:
-#         if p_chain=='A':
-#             chain_plddt=source_plDDT[si:si+chain_lens['A']]
-#         else:
-#             si += chain_lens[p_chain]
-
-#     root = MonteCarloTreeSearchNode('A', '', np.array(chain_coords['A']), np.array(chain_CA_inds['A']),
-#             np.array(chain_CB_inds['A']), np.array(pdb_chains['A']), chain_plddt,
-#             source=None, complex_scores=[0], parent=None, parent_path=[], total_chains=num_nodes)
-
-#     best_path = root.best_path()
-#     return best_path
-
 def write_pdb(best_path, outdir):
     '''Write all chains into one single pdb file
     Update the coords to the roto-translated ones
