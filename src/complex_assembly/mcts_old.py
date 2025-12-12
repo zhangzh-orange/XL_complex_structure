@@ -190,22 +190,23 @@ class MonteCarloTreeSearchNode():
         new_chain = np.setdiff1d(new_edge, self.path)[0]
         edge_chain =  np.setdiff1d(new_edge, new_chain)[0]
         #Read the pdb file containing the new edge
-        if os.path.exists(self.pairdir+new_source+'_'+new_edge[0]+'-'+new_source+'_'+new_edge[1]+'.pdb'):
-            pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(self.pairdir+new_source+'_'+new_edge[0]+'-'+new_source+'_'+new_edge[1]+'.pdb')
+        pdb_folder = os.path.join(self.pairdir,new_source)
+        if os.path.exists(pdb_folder+"/"+new_source+'_'+new_edge[0]+'-'+new_source+'_'+new_edge[1]+'.pdb'):
+            pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_folder+"/"+new_source+'_'+new_edge[0]+'-'+new_source+'_'+new_edge[1]+'.pdb')
         else:
-            pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(self.pairdir+new_source+'_'+new_edge[1]+'-'+new_source+'_'+new_edge[0]+'.pdb')
+            pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_folder+"/"+new_source+'_'+new_edge[1]+'-'+new_source+'_'+new_edge[0]+'.pdb')
 
         #plDDT - for scoring
-        with open(self.plddt_dir + new_source + '_confidences.json', 'r') as f:
+        with open(pdb_folder +"/"+ new_source + '_confidences.json', 'r') as f:
             conf = json.load(f)
         source_plDDT = np.array(conf['atom_plddts'])
-        # source_plDDT =  np.load(self.plddt_dir+new_source+'.npy', allow_pickle=True)
+
         si = 0
         for p_chain in new_source.split('_')[-1]:
-            if p_chain==new_chain:
-                new_chain_plddt=source_plDDT[si:si+self.chain_lens[new_chain]]
-            else:
-                si += self.chain_lens[p_chain]
+            n_atoms = len(pdb_chains[p_chain])  # ★ 新增：该链的原子数
+            if p_chain == new_chain:
+                new_chain_plddt = source_plDDT[si : si + n_atoms]
+            si += n_atoms
 
         #Align the overlapping chains
         #Get the coords for the other chain in the edge
@@ -331,22 +332,23 @@ class MonteCarloTreeSearchNode():
             edge_chain = np.setdiff1d(new_edge, new_chain)[0]
 
             #Read the pdb file containing the new edge
-            if os.path.exists(self.pairdir+new_source+'_'+new_edge[0]+'-'+new_source+'_'+new_edge[1]+'.pdb'):
-                pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(self.pairdir+new_source+'_'+new_edge[0]+'-'+new_source+'_'+new_edge[1]+'.pdb')
+            pdb_folder = os.path.join(self.pairdir,new_source)
+            if os.path.exists(pdb_folder+"/"+new_source+'_'+new_edge[0]+'-'+new_source+'_'+new_edge[1]+'.pdb'):
+                pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_folder+"/"+new_source+'_'+new_edge[0]+'-'+new_source+'_'+new_edge[1]+'.pdb')
             else:
-                pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(self.pairdir+new_source+'_'+new_edge[1]+'-'+new_source+'_'+new_edge[0]+'.pdb')
+                pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_folder+"/"+new_source+'_'+new_edge[1]+'-'+new_source+'_'+new_edge[0]+'.pdb')
 
             #plDDT - for scoring
-            with open(self.plddt_dir + new_source + '_confidences.json', 'r') as f:
+            with open(pdb_folder+"/"+new_source + '_confidences.json', 'r') as f:
                 conf = json.load(f)
             source_plDDT = np.array(conf['atom_plddts'])
-            # source_plDDT =  np.load(self.plddt_dir+new_source+'.npy')
+
             si = 0
             for p_chain in new_source.split('_')[-1]:
-                if p_chain==new_chain:
-                    new_chain_plddt=source_plDDT[si:si+self.chain_lens[new_chain]]
-                else:
-                    si += self.chain_lens[p_chain]
+                n_atoms = len(pdb_chains[p_chain])  # ★ 新增：该链的原子数
+                if p_chain == new_chain:
+                    new_chain_plddt = source_plDDT[si : si + n_atoms]
+                si += n_atoms
 
             #Align the overlapping chains
             #Get the coords for the other chain in the edge
@@ -444,38 +446,120 @@ class MonteCarloTreeSearchNode():
         return v
 
 
-def find_paths(edges, sources, pairdir, plddt_dir, chain_lens, outdir):
-    '''Find all paths that visits all nodes fulfilling the criteria:
-    No overlapping chains (50% of shortest chain's CAs within 5 Å btw two chains)
-    '''
+# def find_paths(edges, sources, pairdir, chain_lens, outdir):
+#     '''Find all paths that visits all nodes fulfilling the criteria:
+#     No overlapping chains (50% of shortest chain's CAs within 5 Å btw two chains)
+#     '''
 
-    #Get all nodes
+#     #Get all nodes
+#     nodes = np.unique(edges)
+#     num_nodes = len(nodes)
+#     #Run Monte Carlo Tree Search
+#     #Read source - start at chain A
+#     sps = edges[np.argwhere(edges=='A')[:,0]][0]
+#     ssr = sources[np.argwhere(edges=='A')[:,0]][0]
+#     start_pairdir = os.path.join(pairdir,ssr+"/")
+#     pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(start_pairdir+ssr+'_'+sps[0]+'-'+ssr+'_'+sps[1]+'.pdb')
+#     #plDDT
+#     plddt_dir = pairdir
+#     with open(start_pairdir + ssr + '_confidences.json', 'r') as f:
+#         conf = json.load(f)
+#     source_plDDT = np.array(conf['atom_plddts'])
+
+#     si = 0
+#     for p_chain in ssr.split('_')[-1]:
+#         n_atoms = len(pdb_chains[p_chain])
+#         if p_chain == 'A':
+#             chain_plddt = source_plDDT[si : si + n_atoms]
+#         si += n_atoms
+
+#     root = MonteCarloTreeSearchNode('A', '', np.array(chain_coords['A']), np.array(chain_CA_inds['A']),
+#             np.array(chain_CB_inds['A']), np.array(pdb_chains['A']), chain_plddt,
+#             edges, sources, pairdir, plddt_dir, chain_lens, outdir,
+#             source=None, complex_scores=[0], parent=None, parent_path=[], total_chains=num_nodes)
+
+#     best_path = root.best_path()
+#     return best_path
+
+def find_paths(edges, sources, pairdir, chain_lens, outdir):
+    """
+    对每个链作为起点都执行一次 MCTS，最后选择总得分最高的路径
+    """
+
     nodes = np.unique(edges)
     num_nodes = len(nodes)
-    #Run Monte Carlo Tree Search
-    #Read source - start at chain A
-    sps = edges[np.argwhere(edges=='A')[:,0]][0]
-    ssr = sources[np.argwhere(edges=='A')[:,0]][0]
-    pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pairdir+ssr+'_'+sps[0]+'-'+ssr+'_'+sps[1]+'.pdb')
-    #plDDT
-    with open(plddt_dir + ssr + '_confidences.json', 'r') as f:
-        conf = json.load(f)
-    source_plDDT = np.array(conf['atom_plddts'])
 
-    si = 0
-    for p_chain in ssr.split('_')[-1]:
-        if p_chain=='A':
-            chain_plddt=source_plDDT[si:si+chain_lens['A']]
+    best_global_path = None
+    best_global_score = -np.inf
+
+    print(f"Running MCTS {num_nodes} times (each node as root)...")
+
+    # === 遍历每个链作为 root ===
+    for root_chain in nodes:
+        print(f"\n=== Running MCTS with root = {root_chain} ===")
+
+        # 找到任意一条与 root_chain 有关联的 edge/pair 用于读取初始 pdb
+        idx = np.argwhere(edges == root_chain)
+        if len(idx) == 0:
+            print(f"No edges found for chain {root_chain}, skipping.")
+            continue
+
+        row = idx[0][0]
+        sps = edges[row]
+        ssr = sources[row]
+        start_pairdir = os.path.join(pairdir, ssr + "/")
+
+        # 找到对应 pdb 文件
+        pdb_file_1 = f"{start_pairdir}{ssr}_{sps[0]}-{ssr}_{sps[1]}.pdb"
+        pdb_file_2 = f"{start_pairdir}{ssr}_{sps[1]}-{ssr}_{sps[0]}.pdb"
+
+        if os.path.exists(pdb_file_1):
+            pdb_file = pdb_file_1
         else:
-            si += chain_lens[p_chain]
+            pdb_file = pdb_file_2
 
-    root = MonteCarloTreeSearchNode('A', '', np.array(chain_coords['A']), np.array(chain_CA_inds['A']),
-            np.array(chain_CB_inds['A']), np.array(pdb_chains['A']), chain_plddt,
-            edges, sources, pairdir, plddt_dir, chain_lens, outdir,
-            source=None, complex_scores=[0], parent=None, parent_path=[], total_chains=num_nodes)
+        pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_file)
 
-    best_path = root.best_path()
-    return best_path
+        # === 读取 atom-level plDDT ===
+        with open(start_pairdir + ssr + '_confidences.json', 'r') as f:
+            conf = json.load(f)
+        source_plDDT = np.array(conf['atom_plddts'])
+
+        # === 按原子数量切片 plDDT（适配 AF3）===
+        si = 0
+        for ch in ssr.split('_')[-1]:
+            n_atoms = len(pdb_chains[ch])
+            if ch == root_chain:
+                root_chain_plddt = source_plDDT[si:si + n_atoms]
+            si += n_atoms
+
+        # === 构建 root node ===
+        root = MonteCarloTreeSearchNode(
+            root_chain, '', np.array(chain_coords[root_chain]),
+            np.array(chain_CA_inds[root_chain]), np.array(chain_CB_inds[root_chain]),
+            np.array(pdb_chains[root_chain]), root_chain_plddt,
+            edges, sources, pairdir, pairdir,
+            chain_lens, outdir,
+            source=None, complex_scores=[0],
+            parent=None, parent_path=[], total_chains=num_nodes
+        )
+
+        # === 跑 MCTS ===
+        best_path = root.best_path()
+
+        # 评分（使用 complex_scores 平均值作为全局标准）
+        final_score = np.mean(best_path.complex_scores)
+
+        print(f"Root {root_chain} → Score = {final_score:.3f}")
+
+        # === 记录全局最佳 ===
+        if final_score > best_global_score:
+            best_global_score = final_score
+            best_global_path = best_path
+
+    print(f"\n===== BEST GLOBAL ROOT = {best_global_path.chain}, SCORE = {best_global_score:.3f} =====")
+
+    return best_global_path
 
 
 def write_pdb(best_path, outdir):
@@ -488,6 +572,7 @@ def write_pdb(best_path, outdir):
 
     current_node = best_path
     #Open a file to write to
+    os.makedirs(outdir, exist_ok=True)
     with open(outdir+'best_complex.pdb', 'w') as file:
         while current_node.parent:
             chain_pdb = current_node.pdb
@@ -543,34 +628,10 @@ def create_path_df(best_path, outdir):
 
 #################MAIN####################
 
-# #Parse args
-# args = parser.parse_args()
-# #Data
-# network = pd.read_csv(args.network[0])
-# pairdir = args.pairdir[0]
-# plddt_dir = args.plddt_dir[0]
-# useqs = pd.read_csv(args.useqs[0])
-# chain_seqs = pd.read_csv(args.chain_seqs[0])[['Chain', 'Useq']]
-# outdir = args.outdir[0]
-
-# #Get all edges
-# edges = np.array(network[['Chain1', 'Chain2']])
-# sources = np.array(network['Source'])
-# #Get all chain lengths
-# useqs['Chain_length'] = [len(x) for x in useqs.Sequence]
-# useqs = useqs[['SeqID', 'Chain_length']]
-# chain_lens = pd.merge(chain_seqs, useqs, left_on='Useq', right_on='SeqID', how='left')
-# chain_lens = dict(zip(chain_lens.Chain.values, chain_lens.Chain_length.values))
-# #Find paths and assemble
-# best_path = find_paths(edges, sources, pairdir, plddt_dir, chain_lens, outdir)
-# #Write PDB files of all complete paths
-# write_pdb(best_path, outdir)
-# #Create and save path df
 def main(args):
     #Data
     network = pd.read_csv(args.network)
     pairdir = args.pairdir
-    plddt_dir = args.plddt_dir
     useqs = pd.read_csv(args.useqs)
     outdir = args.outdir
 
@@ -586,7 +647,7 @@ def main(args):
                           useqs.Chain_length.values))
 
     #Find paths and assemble
-    best_path = find_paths(edges, sources, pairdir, plddt_dir, chain_lens, outdir)
+    best_path = find_paths(edges, sources, pairdir, chain_lens, outdir)
 
     #Write PDB files of all complete paths
     write_pdb(best_path, outdir)
@@ -598,11 +659,10 @@ if __name__ == "__main__":
     # ====== 可选：调试模式（无命令行时使用） ======
     # 如果你希望在调试时手动指定参数，请修改以下路径：
     debug_args = argparse.Namespace(
-        network=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex/network.csv",
-        pairdir=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex/pairs/",
-        plddt_dir=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex/plddt/",
-        useqs=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex/useqs.csv",
-        outdir=r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex/output/"
+        network=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\network.csv",
+        pairdir=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\pairs/",
+        useqs=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\useqs.csv",
+        outdir=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\output/"
     )
 
     # ====== 如果命令行有参数，则使用命令行参数 ======
@@ -611,7 +671,6 @@ if __name__ == "__main__":
     )
     parser.add_argument('--network', type=str, help='Path to csv containing pairwise interactions.')
     parser.add_argument('--pairdir', type=str, help='Path to dir containing all connecting pairs')
-    parser.add_argument('--plddt_dir', type=str, help='Path to dir containing plDDT scores for each complex')
     parser.add_argument('--useqs', type=str, help='CSV with unique seqs')
     parser.add_argument('--outdir', type=str, help='Where to write all complexes')
 

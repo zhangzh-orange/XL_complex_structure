@@ -20,7 +20,10 @@ mapping = chains_df.set_index("Gene")["Chain"].to_dict()
 network_df["Chain1"] = binary_df["p1"].map(mapping)
 network_df["Chain2"] = binary_df["p2"].map(mapping)
 
-network_df["Source"] = network_df["Chain1"] + network_df["Chain2"]
+network_df["Source"] = network_df.apply(
+    lambda row: "".join(sorted([row["Chain1"], row["Chain2"]])),
+    axis=1
+)
 
 useq_df = pd.DataFrame()
 useq_df["Chain"] = chains_df["Chain"]
@@ -40,5 +43,5 @@ for record in SeqIO.parse(fasta_file, "fasta"):
 useq_df["Sequence"] = useq_df["Useq"].map(gene_seq_map)
 
 print(useq_df)
-network_df.to_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\network.csv")
-useq_df.to_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\useqs.csv")
+network_df.to_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\network.csv",index=False)
+useq_df.to_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\useqs.csv",index=False)

@@ -202,8 +202,8 @@ def split_trimer_to_dimers(rewrited_pdb_folder, output_folder):
                 io.save(out_pdb, ChainSelect(dimer_chains))
                 print(f"Saved 2-chain dimer: chains {dimer_chains} → {out_pdb}")
 
-                # TODO：复制score json文件
-                out_conf = get_unique_filename(folder_path, f"{''.join(dimer_chains)}", ext="_confidence.json")
+                # 复制score json文件
+                out_conf = get_unique_filename(folder_path, f"{''.join(dimer_chains)}", ext="_confidences.json")
                 with open(score_path, 'r') as f:
                     conf = json.load(f)
                 with open(out_conf, "w") as f:
@@ -240,8 +240,8 @@ def split_trimer_to_dimers(rewrited_pdb_folder, output_folder):
                     io.save(out_pdb, ChainSelect(dimer_chains))
                     print(f"Saved dimer {i}: chains {dimer_chains} → {out_pdb}")
 
-                    # TODO:处理score json文件
-                    out_conf = get_unique_filename(folder_path, f"{''.join(dimer_chains)}", ext="_confidence.json")
+                    # 处理score json文件
+                    out_conf = get_unique_filename(folder_path, f"{''.join(dimer_chains)}", ext="_confidences.json")
 
                     conf_dimer = {}
 
