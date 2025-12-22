@@ -460,6 +460,7 @@ if __name__ == "__main__":
     pdb_file = r"N:\08_NK_structure_prediction\XL_complex_structure\data\copa_cope_arfgap3_2_model.cif"
     pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_cif(pdb_file)
     print(chain_coords["A"][:10])
+    print(chain_CA_inds["A"][:10])
     # print(chain_coords)
     # print(chain_CA_inds)
     # print(chain_CB_inds)

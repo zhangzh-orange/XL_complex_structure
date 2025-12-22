@@ -91,6 +91,92 @@ def check_overlaps(cpath_coords,cpath_CA_inds,n_coords,n_CA_inds):
 
     return False
 
+######## Crosslink-based Score ########
+def cal_crosslink_distance(path_coords, 
+                           path_CA_inds,
+                           a_chain_inds:str, 
+                       a_AA_inds:int, 
+                       b_chain_inds:str, 
+                       b_AA_inds:int,
+                       crosslinker_length:int=45):
+    """Calculate distance of two crosslinked residues
+
+    Parameters
+    ----------
+    path_coords:
+
+    path_CB_inds:
+
+    a_chain_inds : str
+        第一个位点的所在链单字母代号
+    a_AA_inds : int
+        第一个位点的氨基酸index
+    b_chain_inds : str
+        第二个位点的所在链的单字母代号
+    b_AA_inds : int
+        第二个位点的氨基酸index
+    crosslinker_length : int, optional
+        Restriction of max length of crosslinker, by default DSBSO with length 45 A
+
+    Returns
+    -------
+    distance: float
+        distance of two crosslinked residues
+    if_consist: bool
+        if align with special crosslinker length (smaller or equal)
+    """
+    
+    
+    a_CA_inds = path_CA_inds[a_chain_inds][a_AA_inds]
+    b_CA_inds = path_CA_inds[b_chain_inds][b_AA_inds]
+
+    a_CA_coords = path_coords[a_chain_inds][a_CA_inds]
+    b_CA_coords = path_coords[b_chain_inds][b_CA_inds]
+
+    def cal_euclidean_distance(p1, p2):
+        x1, y1, z1 = p1
+        x2, y2, z2 = p2
+        return math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+    distance = cal_euclidean_distance(a_CA_coords,b_CA_coords)
+    
+    consist_with_crosslinker_length = (distance<=crosslinker_length)
+    return round(distance, 2), consist_with_crosslinker_length
+
+
+def score_crosslinks(ucrosslinks:pd.DataFrame,
+                     path_coords,
+                     path_CA_inds,
+                     crosslinker_length:int=45):
+    total_crosslinks = len(ucrosslinks)
+    if total_crosslinks == 0:
+        return 1.0, 1.0
+    
+    consist_num = 0
+    interlink_num = 0
+    interlink_consist_num = 0
+    for _,row in ucrosslinks.iterrows(): 
+        distance,if_consist= cal_crosslink_distance(path_coords, 
+                                              path_CA_inds, 
+                                              row["ChainA"], 
+                                              row["ResidueA"], 
+                                              row["ChainB"], 
+                                              row["ResidueB"])
+        consist_num+=if_consist
+        
+        if row["ChainA"] != row["ChainB"]:
+            interlink_num += 1
+            interlink_consist_num += if_consist
+
+    score_total = consist_num / total_crosslinks
+    if  interlink_num == 0:
+        score_inter = 1.0
+    else:
+        score_inter = interlink_consist_num/interlink_num
+
+    return score_total, score_inter
+########################################
+
+# plDDT-based score
 def score_complex(path_coords, path_CB_inds, path_plddt):
     '''Score all interfaces in the current complex
     '''
@@ -121,6 +207,9 @@ def score_complex(path_coords, path_CB_inds, path_plddt):
                 complex_score +=  np.log10(contacts.shape[0]+1)*av_if_plDDT
     
     return complex_score
+
+def score_complex():
+    pass
 
 class MonteCarloTreeSearchNode():
     '''Based on https://ai-boson.github.io/mcts/
@@ -658,33 +747,41 @@ def main(args):
 if __name__ == "__main__":
     # ====== 可选：调试模式（无命令行时使用） ======
     # 如果你希望在调试时手动指定参数，请修改以下路径：
-    debug_args = argparse.Namespace(
-        network=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\network.csv",
-        pairdir=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\pairs/",
-        useqs=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\useqs.csv",
-        outdir=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\output/"
-    )
+    # debug_args = argparse.Namespace(
+    #     network=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\network.csv",
+    #     pairdir=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\pairs/",
+    #     useqs=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\useqs.csv",
+    #     outdir=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\output/"
+    # )
 
-    # ====== 如果命令行有参数，则使用命令行参数 ======
-    parser = argparse.ArgumentParser(
-        description='Find optimal paths by Monte Carlo Tree Search.'
-    )
-    parser.add_argument('--network', type=str, help='Path to csv containing pairwise interactions.')
-    parser.add_argument('--pairdir', type=str, help='Path to dir containing all connecting pairs')
-    parser.add_argument('--useqs', type=str, help='CSV with unique seqs')
-    parser.add_argument('--outdir', type=str, help='Where to write all complexes')
+    # # ====== 如果命令行有参数，则使用命令行参数 ======
+    # parser = argparse.ArgumentParser(
+    #     description='Find optimal paths by Monte Carlo Tree Search.'
+    # )
+    # parser.add_argument('--network', type=str, help='Path to csv containing pairwise interactions.')
+    # parser.add_argument('--pairdir', type=str, help='Path to dir containing all connecting pairs')
+    # parser.add_argument('--useqs', type=str, help='CSV with unique seqs')
+    # parser.add_argument('--outdir', type=str, help='Where to write all complexes')
 
-    try:
-        cmd_args = parser.parse_args()
-        # 若命令行没有给参数，则 fallback 到 debug_args
-        if all(v is None for v in vars(cmd_args).values()):
-            print("No command-line arguments detected — using debug arguments.")
-            main(debug_args)
-        else:
-            # 使用命令行参数
-            main(cmd_args)
-    except:
-        # parse_args 出现异常则使用 debug 参数
-        print("Argument parsing failed — using debug arguments.")
-        main(debug_args)
-    pass
+    # try:
+    #     cmd_args = parser.parse_args()
+    #     # 若命令行没有给参数，则 fallback 到 debug_args
+    #     if all(v is None for v in vars(cmd_args).values()):
+    #         print("No command-line arguments detected — using debug arguments.")
+    #         main(debug_args)
+    #     else:
+    #         # 使用命令行参数
+    #         main(cmd_args)
+    # except:
+    #     # parse_args 出现异常则使用 debug 参数
+    #     print("Argument parsing failed — using debug arguments.")
+    #     main(debug_args)
+    # pass
+
+    pdb_file = r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex\output\merged.pdb"
+    pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_file)
+    ucrosslinks=pd.read_csv(r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex\ucrosslinks.csv")
+    crosslink_score = score_crosslinks(ucrosslinks,
+                                       chain_coords,
+                                       chain_CA_inds)
+    print(crosslink_score)
