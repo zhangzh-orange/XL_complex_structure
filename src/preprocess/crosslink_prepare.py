@@ -2,7 +2,6 @@ import math
 import pandas as pd
 
 
-
 def cal_crosslink_distance(a_chain_inds:str, 
                        a_AA_inds:int, 
                        b_chain_inds:str, 
@@ -92,24 +91,8 @@ def crosslink_prepare(useq_df:pd.DataFrame,
     return unique_crosslink_df
 
 if __name__ == "__main__":
-    from src.complex_assembly.mcts_old import read_pdb
-    pdb_file = r"N:\08_NK_structure_prediction\XL_complex_structure\data\lrba_stx7_0_AB_A-lrba_stx7_0_AB_B.pdb"
-    pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_file)
-    print(chain_coords["A"][:10])
-    print(chain_CA_inds["A"][:10])
-    a_CA_inds = chain_CA_inds["A"][2]
-    b_CA_inds = chain_CA_inds["A"][10]
-
-    a_CA_coords = chain_coords["A"][a_CA_inds]
-    b_CA_coords = chain_coords["A"][b_CA_inds]
-    print(a_CA_coords)
-    print(b_CA_coords)
-
-    distance = cal_crosslink_distance("A",2,"A",10)
-    print(distance)
-
-    # useq_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex\useqs.csv")
-    # residue_pair_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\LRBAandSNARE\heklopit_pl3017_frd1ppi_sc151_fdr1rp_LRBAandSNARE.csv")
-    # ucrosslinks = crosslink_prepare(useq_df, residue_pair_df)
-    # ucrosslinks.to_csv(r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex\ucrosslinks.csv",index=False)
+    useq_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\useqs.csv")
+    residue_pair_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_CORVET.csv")
+    ucrosslinks = crosslink_prepare(useq_df, residue_pair_df)
+    ucrosslinks.to_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\ucrosslinks.csv",index=False)
 
