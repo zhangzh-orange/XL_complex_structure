@@ -11,10 +11,43 @@ from collections import Counter, defaultdict
 from Bio.SVDSuperimposer import SVDSuperimposer
 import pdb
 import json
+import logging
 
 
 
 ##############FUNCTIONS##############
+def setup_logger(log_file):
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # 防止重复添加 handler（在 notebook / 多次运行时很重要）
+    if logger.handlers:
+        return logger
+
+    # 文件输出
+    fh = logging.FileHandler(log_file, mode='w')
+    fh.setLevel(logging.INFO)
+
+    # 屏幕输出
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+
+    formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+
+    return logger
+
+
 def parse_atm_record(line):
     '''Get the atm record
     '''
@@ -35,6 +68,7 @@ def parse_atm_record(line):
     record['B'] = float(line[60:66])
 
     return record
+
 
 def read_pdb(pdbfile):
     '''Read a pdb file per chain
@@ -70,161 +104,272 @@ def read_pdb(pdbfile):
 
     return pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds
 
-def check_overlaps(cpath_coords,cpath_CA_inds,n_coords,n_CA_inds):
-    '''Check assembly overlaps of new chain
-    '''
-    #Check CA overlap
-    n_CAs = n_coords[n_CA_inds] #New chain CAs
-    l1 = (len(n_CAs))
-    #Go through all previous CAs and compare
+# def check_overlaps(cpath_coords,cpath_CA_inds,n_coords,n_CA_inds):
+#     '''Check assembly overlaps of new chain
+#     '''
+#     #Check CA overlap
+#     n_CAs = n_coords[n_CA_inds] #New chain CAs
+#     l1 = (len(n_CAs))
+#     #Go through all previous CAs and compare
 
-    for i in range(len(cpath_coords)):
-        p_CAs = cpath_coords[i][cpath_CA_inds[i]]
-        #Calc 2-norm
-        mat = np.append(n_CAs, p_CAs,axis=0)
-        a_min_b = mat[:,np.newaxis,:] -mat[np.newaxis,:,:]
-        dists = np.sqrt(np.sum(a_min_b.T ** 2, axis=0)).T
-        contact_dists = dists[l1:,:l1]
-        overlap = np.argwhere(contact_dists<=5) #5 Å threshold
-        if overlap.shape[0]>0.5*min(l1,len(p_CAs)): #If over 50% overlap
+#     for i in range(len(cpath_coords)):
+#         p_CAs = cpath_coords[i][cpath_CA_inds[i]]
+#         #Calc 2-norm
+#         mat = np.append(n_CAs, p_CAs,axis=0)
+#         a_min_b = mat[:,np.newaxis,:] -mat[np.newaxis,:,:]
+#         dists = np.sqrt(np.sum(a_min_b.T ** 2, axis=0)).T
+#         contact_dists = dists[l1:,:l1]
+#         overlap = np.argwhere(contact_dists<=5) #5 Å threshold
+#         if overlap.shape[0]>0.5*min(l1,len(p_CAs)): #If over 50% overlap
+#             return True
+
+#     return False
+
+def check_overlaps(path_coords: dict,
+                   path_CA_inds: dict,
+                   new_coords: np.ndarray,
+                   new_CA_inds: np.ndarray):
+    """
+    判断新链是否与已有 path 中任一链发生严重重叠
+    """
+
+    new_CAs = new_coords[new_CA_inds]
+    l1 = len(new_CAs)
+
+    for chain, coords in path_coords.items():
+        p_CAs = coords[path_CA_inds[chain]]
+
+        mat = np.vstack([new_CAs, p_CAs])
+        d = mat[:, None, :] - mat[None, :, :]
+        dists = np.sqrt((d ** 2).sum(axis=-1))
+
+        contact = dists[:l1, l1:] <= 5.0
+        if contact.sum() > 0.5 * min(l1, len(p_CAs)):
             return True
 
     return False
 
 ######## Crosslink-based Score ########
-def cal_crosslink_distance(path_coords, 
-                           path_CA_inds,
-                           a_chain_inds:str, 
-                       a_AA_inds:int, 
-                       b_chain_inds:str, 
-                       b_AA_inds:int,
-                       crosslinker_length:int=45):
-    """Calculate distance of two crosslinked residues
+# def cal_crosslink_distance(path_coords, 
+#                            path_CA_inds,
+#                            a_chain_inds:str, 
+#                        a_AA_inds:int, 
+#                        b_chain_inds:str, 
+#                        b_AA_inds:int,
+#                        crosslinker_length:int=45):
+#     """Calculate distance of two crosslinked residues
 
-    Parameters
-    ----------
-    path_coords:
+#     Parameters
+#     ----------
+#     path_coords:
 
-    path_CB_inds:
+#     path_CB_inds:
 
-    a_chain_inds : str
-        第一个位点的所在链单字母代号
-    a_AA_inds : int
-        第一个位点的氨基酸index
-    b_chain_inds : str
-        第二个位点的所在链的单字母代号
-    b_AA_inds : int
-        第二个位点的氨基酸index
-    crosslinker_length : int, optional
-        Restriction of max length of crosslinker, by default DSBSO with length 45 A
+#     a_chain_inds : str
+#         第一个位点的所在链单字母代号
+#     a_AA_inds : int
+#         第一个位点的氨基酸index
+#     b_chain_inds : str
+#         第二个位点的所在链的单字母代号
+#     b_AA_inds : int
+#         第二个位点的氨基酸index
+#     crosslinker_length : int, optional
+#         Restriction of max length of crosslinker, by default DSBSO with length 45 A
 
-    Returns
-    -------
-    distance: float
-        distance of two crosslinked residues
-    if_consist: bool
-        if align with special crosslinker length (smaller or equal)
-    """
+#     Returns
+#     -------
+#     distance: float
+#         distance of two crosslinked residues
+#     if_consist: bool
+#         if align with special crosslinker length (smaller or equal)
+#     """
     
     
-    a_CA_inds = path_CA_inds[a_chain_inds][a_AA_inds]
-    b_CA_inds = path_CA_inds[b_chain_inds][b_AA_inds]
+#     a_CA_inds = path_CA_inds[a_chain_inds][a_AA_inds]
+#     b_CA_inds = path_CA_inds[b_chain_inds][b_AA_inds]
 
-    a_CA_coords = path_coords[a_chain_inds][a_CA_inds]
-    b_CA_coords = path_coords[b_chain_inds][b_CA_inds]
+#     a_CA_coords = path_coords[a_chain_inds][a_CA_inds]
+#     b_CA_coords = path_coords[b_chain_inds][b_CA_inds]
 
-    def cal_euclidean_distance(p1, p2):
-        x1, y1, z1 = p1
-        x2, y2, z2 = p2
-        return math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
-    distance = cal_euclidean_distance(a_CA_coords,b_CA_coords)
+#     def cal_euclidean_distance(p1, p2):
+#         x1, y1, z1 = p1
+#         x2, y2, z2 = p2
+#         return math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+#     distance = cal_euclidean_distance(a_CA_coords,b_CA_coords)
     
-    consist_with_crosslinker_length = (distance<=crosslinker_length)
-    return round(distance, 2), consist_with_crosslinker_length
+#     consist_with_crosslinker_length = (distance<=crosslinker_length)
+#     return round(distance, 2), consist_with_crosslinker_length
 
+def cal_crosslink_distance(path_coords: dict,
+                           path_CA_inds: dict,
+                           a_chain: str,
+                           a_res: int,
+                           b_chain: str,
+                           b_res: int,
+                           crosslinker_length: int = 45):
 
-def score_crosslinks(ucrosslinks:pd.DataFrame,
-                     path_coords,
-                     path_CA_inds,
-                     crosslinker_length:int=45,
-                     inter_prop=0.8):
-    total_crosslinks = len(ucrosslinks)
-    if total_crosslinks == 0:
-        return 1.0, 1.0, 1.0
+    if a_chain not in path_coords or b_chain not in path_coords:
+        return np.inf, False
+
+    a_ca_atom = path_CA_inds[a_chain][a_res]
+    b_ca_atom = path_CA_inds[b_chain][b_res]
+
+    a_coord = path_coords[a_chain][a_ca_atom]
+    b_coord = path_coords[b_chain][b_ca_atom]
+
+    dist = np.linalg.norm(a_coord - b_coord)
+    return round(dist, 2), dist <= crosslinker_length
+
+# def score_crosslinks(ucrosslinks:pd.DataFrame,
+#                      path_coords,
+#                      path_CA_inds,
+#                      crosslinker_length:int=45,
+#                      inter_prop=0.8):
+#     total_crosslinks = len(ucrosslinks)
+#     if total_crosslinks == 0:
+#         return 1.0, 1.0, 1.0
     
-    # === 新增：chain name → index 映射 ===
-    chain_to_idx = {chain: i for i, chain in enumerate(path_coords.keys())} \
-        if isinstance(path_coords, dict) else None
+#     # === 新增：chain name → index 映射 ===
+#     chain_to_idx = {chain: i for i, chain in enumerate(path_coords.keys())} \
+#         if isinstance(path_coords, dict) else None
     
-    consist_num = 0
-    interlink_num = 0
-    interlink_consist_num = 0
-    for _,row in ucrosslinks.iterrows(): 
-        distance,if_consist= cal_crosslink_distance(path_coords, 
-                                              path_CA_inds, 
-                                              row["ChainA"], 
-                                              row["ResidueA"], 
-                                              row["ChainB"], 
-                                              row["ResidueB"],
-                                              crosslinker_length)
-        consist_num+=if_consist
+#     consist_num = 0
+#     interlink_num = 0
+#     interlink_consist_num = 0
+#     for _,row in ucrosslinks.iterrows(): 
+#         distance,if_consist= cal_crosslink_distance(path_coords, 
+#                                               path_CA_inds, 
+#                                               row["ChainA"], 
+#                                               row["ResidueA"], 
+#                                               row["ChainB"], 
+#                                               row["ResidueB"],
+#                                               crosslinker_length)
+#         consist_num+=if_consist
         
+#         if row["ChainA"] != row["ChainB"]:
+#             interlink_num += 1
+#             interlink_consist_num += if_consist
+
+#     score_total = consist_num / total_crosslinks
+#     if  interlink_num == 0:
+#         score_inter = 1.0
+#     else:
+#         score_inter = interlink_consist_num/interlink_num
+
+#     crosslink_score=(1-inter_prop)*score_total+inter_prop*score_inter
+
+#     return score_total, score_inter, crosslink_score
+
+def score_crosslinks(ucrosslinks: pd.DataFrame,
+                     path_coords: dict,
+                     path_CA_inds: dict,
+                     crosslinker_length: int = 45,
+                     inter_prop: float = 0.8):
+
+    if len(ucrosslinks) == 0:
+        return 1.0, 1.0, 1.0
+
+    consist = 0
+    inter_consist = 0
+    inter_total = 0
+
+    for _, row in ucrosslinks.iterrows():
+        dist, ok = cal_crosslink_distance(
+            path_coords, path_CA_inds,
+            row["ChainA"], row["ResidueA"],
+            row["ChainB"], row["ResidueB"],
+            crosslinker_length
+        )
+
+        consist += ok
         if row["ChainA"] != row["ChainB"]:
-            interlink_num += 1
-            interlink_consist_num += if_consist
+            inter_total += 1
+            inter_consist += ok
 
-    score_total = consist_num / total_crosslinks
-    if  interlink_num == 0:
-        score_inter = 1.0
-    else:
-        score_inter = interlink_consist_num/interlink_num
+    score_total = consist / len(ucrosslinks)
+    score_inter = 1.0 if inter_total == 0 else inter_consist / inter_total
 
-    crosslink_score=(1-inter_prop)*score_total+inter_prop*score_inter
-
-    return score_total, score_inter, crosslink_score
+    final = (1 - inter_prop) * score_total + inter_prop * score_inter
+    return score_total, score_inter, final
 ########################################
 
 # plDDT-based score
-def score_structure(path_coords, path_CB_inds, path_plddt):
-    '''Score all interfaces in the current complex
-    '''
+# def score_structure(path_coords, path_CB_inds, path_plddt):
+#     '''Score all interfaces in the current complex
+#     '''
 
-    structure_score = 0
-    chain_inds = np.arange(len(path_coords))
-    #Get interfaces per chain
-    for i in chain_inds:
-        chain_coords = path_coords[i]
-        chain_CB_inds = path_CB_inds[i]
-        l1 = len(chain_CB_inds)
-        chain_CB_coords = chain_coords[chain_CB_inds]
-        chain_plddt = path_plddt[i]
+#     structure_score = 0
+#     chain_inds = np.arange(len(path_coords))
+#     #Get interfaces per chain
+#     for i in chain_inds:
+#         chain_coords = path_coords[i]
+#         chain_CB_inds = path_CB_inds[i]
+#         l1 = len(chain_CB_inds)
+#         chain_CB_coords = chain_coords[chain_CB_inds]
+#         chain_plddt = path_plddt[i]
 
-        for int_i in np.setdiff1d(chain_inds, i):
-            int_chain_CB_coords = path_coords[int_i][path_CB_inds[int_i]]
-            int_chain_plddt = path_plddt[int_i]
-            #Calc 2-norm
-            mat = np.append(chain_CB_coords,int_chain_CB_coords,axis=0)
-            a_min_b = mat[:,np.newaxis,:] -mat[np.newaxis,:,:]
-            dists = np.sqrt(np.sum(a_min_b.T ** 2, axis=0)).T
-            contact_dists = dists[:l1,l1:]
-            contacts = np.argwhere(contact_dists<=8)
-            #The first axis contains the contacts from chain 1
-            #The second the contacts from chain 2
-            if contacts.shape[0]>0:
-                av_if_plDDT =  np.concatenate((chain_plddt[contacts[:,0]], int_chain_plddt[contacts[:,1]])).mean()
-                structure_score +=  np.log10(contacts.shape[0]+1)*av_if_plDDT
+#         for int_i in np.setdiff1d(chain_inds, i):
+#             int_chain_CB_coords = path_coords[int_i][path_CB_inds[int_i]]
+#             int_chain_plddt = path_plddt[int_i]
+#             #Calc 2-norm
+#             mat = np.append(chain_CB_coords,int_chain_CB_coords,axis=0)
+#             a_min_b = mat[:,np.newaxis,:] -mat[np.newaxis,:,:]
+#             dists = np.sqrt(np.sum(a_min_b.T ** 2, axis=0)).T
+#             contact_dists = dists[:l1,l1:]
+#             contacts = np.argwhere(contact_dists<=8)
+#             #The first axis contains the contacts from chain 1
+#             #The second the contacts from chain 2
+#             if contacts.shape[0]>0:
+#                 av_if_plDDT =  np.concatenate((chain_plddt[contacts[:,0]], int_chain_plddt[contacts[:,1]])).mean()
+#                 structure_score +=  np.log10(contacts.shape[0]+1)*av_if_plDDT
     
-    return structure_score
+#     return structure_score
 
+def score_structure(path_coords: dict,
+                    path_CB_inds: dict,
+                    path_plddt: dict):
+
+    score = 0.0
+    chains = list(path_coords.keys())
+
+    for i, c1 in enumerate(chains):
+        coords1 = path_coords[c1][path_CB_inds[c1]]
+        plddt1 = path_plddt[c1]
+
+        for c2 in chains[i+1:]:
+            coords2 = path_coords[c2][path_CB_inds[c2]]
+            plddt2 = path_plddt[c2]
+
+            mat = np.vstack([coords1, coords2])
+            d = mat[:, None, :] - mat[None, :, :]
+            dists = np.sqrt((d ** 2).sum(axis=-1))
+
+            contacts = np.argwhere(dists[:len(coords1), len(coords1):] <= 8.0)
+            if len(contacts) == 0:
+                continue
+
+            mean_plddt = np.mean(
+                np.concatenate([plddt1[contacts[:, 0]],
+                                plddt2[contacts[:, 1]]])
+            )
+
+            score += np.log10(len(contacts) + 1) * mean_plddt
+
+    return score
+
+# def score_complex(path_coords, path_CA_inds, path_CB_inds, path_plddt, ucrosslinks):
+#     structure_score = score_structure(path_coords, 
+#                                       path_CB_inds, 
+#                                       path_plddt)
+#     _,_,crosslink_score = score_crosslinks(ucrosslinks,
+#                                            path_coords,
+#                                            path_CA_inds)
+#     complex_score = structure_score*crosslink_score
+#     return complex_score
 def score_complex(path_coords, path_CA_inds, path_CB_inds, path_plddt, ucrosslinks):
-    structure_score = score_structure(path_coords, 
-                                      path_CB_inds, 
-                                      path_plddt)
-    _,_,crosslink_score = score_crosslinks(ucrosslinks,
-                                           path_coords,
-                                           path_CA_inds)
-    complex_score = structure_score*crosslink_score
-    return complex_score
+    s_struct = score_structure(path_coords, path_CB_inds, path_plddt)
+    _, _, s_xl = score_crosslinks(ucrosslinks, path_coords, path_CA_inds)
+    return s_struct * s_xl
 
 class MonteCarloTreeSearchNode():
     '''Based on https://ai-boson.github.io/mcts/
@@ -331,22 +476,35 @@ class MonteCarloTreeSearchNode():
         rotated_coords = np.dot(np.array(chain_coords[new_chain]), rot) + tran
 
         #Get all chain coords and CA inds for the current path
-        path_coords = []
-        path_CA_inds =[]
-        path_CB_inds = []
-        path_plddt = []
+        # path_coords = []
+        # path_CA_inds =[]
+        # path_CB_inds = []
+        # path_plddt = []
+        # path_node = self
+        # ucrosslinks = self.ucrosslinks
+        # while path_node.parent:
+        #     path_coords.append(path_node.chain_coords)
+        #     path_CA_inds.append(path_node.CA_inds)
+        #     path_CB_inds.append(path_node.CB_inds)
+        #     path_plddt.append(path_node.plddt)
+        #     path_node = path_node.parent
+        # path_coords.append(path_node.chain_coords) #Last - when no parent = root
+        # path_CA_inds.append(path_node.CA_inds)
+        # path_CB_inds.append(path_node.CB_inds)
+        # path_plddt.append(path_node.plddt)
+        path_coords = {}
+        path_CA_inds = {}
+        path_CB_inds = {}
+        path_plddt = {}
+
         path_node = self
         ucrosslinks = self.ucrosslinks
-        while path_node.parent:
-            path_coords.append(path_node.chain_coords)
-            path_CA_inds.append(path_node.CA_inds)
-            path_CB_inds.append(path_node.CB_inds)
-            path_plddt.append(path_node.plddt)
+        while path_node:
+            path_coords[path_node.chain] = path_node.chain_coords
+            path_CA_inds[path_node.chain] = path_node.CA_inds
+            path_CB_inds[path_node.chain] = path_node.CB_inds
+            path_plddt[path_node.chain] = path_node.plddt
             path_node = path_node.parent
-        path_coords.append(path_node.chain_coords) #Last - when no parent = root
-        path_CA_inds.append(path_node.CA_inds)
-        path_CB_inds.append(path_node.CB_inds)
-        path_plddt.append(path_node.plddt)
 
 
         #Check overlaps
@@ -355,12 +513,16 @@ class MonteCarloTreeSearchNode():
         #If no overlap - score and create a child node
         if overlap==False:
             #Add the new chain
-            path_coords.append(rotated_coords), path_CB_inds.append(chain_CB_inds[new_chain]), path_plddt.append(new_chain_plddt)
+            # path_coords.append(rotated_coords), path_CB_inds.append(chain_CB_inds[new_chain]), path_plddt.append(new_chain_plddt)
+            path_coords[new_chain] = rotated_coords
+            path_CA_inds[new_chain] = np.array(chain_CA_inds[new_chain])
+            path_CB_inds[new_chain] = np.array(chain_CB_inds[new_chain])
+            path_plddt[new_chain] = new_chain_plddt
             complex_score = score_complex(path_coords, path_CA_inds, path_CB_inds, path_plddt, ucrosslinks)
             #Add to all complex scores
             child_node = MonteCarloTreeSearchNode(new_chain, edge_chain, rotated_coords, np.array(chain_CA_inds[new_chain]),
                     np.array(chain_CB_inds[new_chain]), np.array(pdb_chains[new_chain]), new_chain_plddt,
-                    self.edges, self.sources, self.pairdir, self.plddt_dir, self.chain_lens, self.outdir,
+                    self.edges, self.sources, self.pairdir, self.plddt_dir, self.chain_lens, self.ucrosslinks, self.outdir,
                     source=new_source, complex_scores=[complex_score], parent=self, parent_path=self.path, total_chains=self.total_chains)
 
             self.children.append(child_node)
@@ -369,9 +531,6 @@ class MonteCarloTreeSearchNode():
         else:
             #Only consider nodes that do not result in overlaps
             return None
-
-
-
 
 
     def rollout(self):
@@ -384,24 +543,38 @@ class MonteCarloTreeSearchNode():
 
         #Get all chain coords, CA,CB inds and plddt for the current path
         rollout_path = []
-        path_coords = []
-        path_CA_inds =[]
-        path_CB_inds = []
-        path_plddt = []
+        # path_coords = []
+        # path_CA_inds =[]
+        # path_CB_inds = []
+        # path_plddt = []
+        # path_node = self
+        # ucrosslinks = self.ucrosslinks
+        # while path_node.parent:
+        #     rollout_path.append(path_node.chain)
+        #     path_coords.append(path_node.chain_coords)
+        #     path_CA_inds.append(path_node.CA_inds)
+        #     path_CB_inds.append(path_node.CB_inds)
+        #     path_plddt.append(path_node.plddt)
+        #     path_node = path_node.parent
+        # rollout_path.append(path_node.chain)
+        # path_coords.append(path_node.chain_coords) #Last - when no parent = root
+        # path_CA_inds.append(path_node.CA_inds)
+        # path_CB_inds.append(path_node.CB_inds)
+        # path_plddt.append(path_node.plddt)
+        path_coords = {}
+        path_CA_inds = {}
+        path_CB_inds = {}
+        path_plddt = {}
+
         path_node = self
         ucrosslinks = self.ucrosslinks
         while path_node.parent:
             rollout_path.append(path_node.chain)
-            path_coords.append(path_node.chain_coords)
-            path_CA_inds.append(path_node.CA_inds)
-            path_CB_inds.append(path_node.CB_inds)
-            path_plddt.append(path_node.plddt)
+            path_coords[path_node.chain] = path_node.chain_coords
+            path_CA_inds[path_node.chain] = path_node.CA_inds
+            path_CB_inds[path_node.chain] = path_node.CB_inds
+            path_plddt[path_node.chain] = path_node.plddt
             path_node = path_node.parent
-        rollout_path.append(path_node.chain)
-        path_coords.append(path_node.chain_coords) #Last - when no parent = root
-        path_CA_inds.append(path_node.CA_inds)
-        path_CB_inds.append(path_node.CB_inds)
-        path_plddt.append(path_node.plddt)
 
         def get_possible_edges(path):
             '''Get all possible edges in path
@@ -459,11 +632,16 @@ class MonteCarloTreeSearchNode():
 
             #Align the overlapping chains
             #Get the coords for the other chain in the edge
-            edge_ind = np.argwhere(np.array(rollout_path)==edge_chain)[0][0]
-            #Set the coordinates to be superimposed.
-            #coords will be put on top of reference_coords.
+            # edge_ind = np.argwhere(np.array(rollout_path)==edge_chain)[0][0]
+            # #Set the coordinates to be superimposed.
+            # #coords will be put on top of reference_coords.
+            # sup = SVDSuperimposer()
+            # sup.set(path_coords[edge_ind],np.array(chain_coords[edge_chain])) #(reference_coords, coords)
             sup = SVDSuperimposer()
-            sup.set(path_coords[edge_ind],np.array(chain_coords[edge_chain])) #(reference_coords, coords)
+            sup.set(
+                path_coords[edge_chain],              # dict 用 key 访问
+                np.array(chain_coords[edge_chain])
+            )
             sup.run()
             rot, tran = sup.get_rotran()
 
@@ -471,15 +649,26 @@ class MonteCarloTreeSearchNode():
             rotated_coords = np.dot(np.array(chain_coords[new_chain]), rot) + tran
 
             #Check overlaps
-            overlap = check_overlaps(path_coords,path_CA_inds,rotated_coords,chain_CA_inds[new_chain])
+            # overlap = check_overlaps(path_coords,path_CA_inds,rotated_coords,chain_CA_inds[new_chain])
+            overlap = check_overlaps(
+                path_coords,
+                path_CA_inds,
+                rotated_coords,
+                np.array(chain_CA_inds[new_chain])
+            )
 
 
             #If no overlap - score and create a child node
             if overlap==False:
                 #Add the new chain
-                rollout_path.append(new_chain), path_coords.append(rotated_coords),
-                path_CA_inds.append(chain_CA_inds[new_chain])
-                path_CB_inds.append(chain_CB_inds[new_chain]), path_plddt.append(new_chain_plddt)
+                rollout_path.append(new_chain), 
+                # path_coords.append(rotated_coords),
+                # path_CA_inds.append(chain_CA_inds[new_chain])
+                # path_CB_inds.append(chain_CB_inds[new_chain]), path_plddt.append(new_chain_plddt)
+                path_coords[new_chain] = rotated_coords
+                path_CA_inds[new_chain] = np.array(chain_CA_inds[new_chain])
+                path_CB_inds[new_chain] = np.array(chain_CB_inds[new_chain])
+                path_plddt[new_chain] = new_chain_plddt
 
             else:
                 break
@@ -588,6 +777,19 @@ class MonteCarloTreeSearchNode():
 #     best_path = root.best_path()
 #     return best_path
 
+
+def build_path_dict_from_node(node):
+    path_coords = {}
+    path_CA_inds = {}
+
+    while node:
+        path_coords[node.chain] = node.chain_coords
+        path_CA_inds[node.chain] = node.CA_inds
+        node = node.parent
+
+    return path_coords, path_CA_inds
+
+
 def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
     """
     对每个链作为起点都执行一次 MCTS，最后选择总得分最高的路径
@@ -596,6 +798,7 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
     nodes = np.unique(edges)
     num_nodes = len(nodes)
 
+    best_global_root = None
     best_global_path = None
     best_global_score = -np.inf
 
@@ -654,17 +857,47 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
         # === 跑 MCTS ===
         best_path = root.best_path()
 
-        # 评分（使用 complex_scores 平均值作为全局标准）
+        # === MCTS 搜索阶段评分（用于比较 root）===
         final_score = np.mean(best_path.complex_scores)
 
-        print(f"Root {root_chain} → Score = {final_score:.3f}")
+        # === 用最终完整结构计算 crosslink 精确评分 ===
+        final_path_coords, final_path_CA_inds = build_path_dict_from_node(best_path)
+
+        score_total, score_inter, score_final = score_crosslinks(
+            ucrosslinks,
+            final_path_coords,
+            final_path_CA_inds
+        )
+
+        print(
+            f"Root {root_chain} → "
+            f"MCTS = {final_score:.3f} | "
+            f"XL_total = {score_total:.3f} | "
+            f"XL_inter = {score_inter:.3f} | "
+            f"XL_final = {score_final:.3f}"
+        )
 
         # === 记录全局最佳 ===
         if final_score > best_global_score:
             best_global_score = final_score
             best_global_path = best_path
+            best_global_root = root_chain
 
-    print(f"\n===== BEST GLOBAL ROOT = {best_global_path.chain}, SCORE = {best_global_score:.3f} =====")
+    print(f"\n===== BEST GLOBAL ROOT = {best_global_root}, SCORE = {best_global_score:.3f} =====")
+
+    # === 计算最终结构的 crosslink score ===
+    final_path_coords, final_path_CA_inds = build_path_dict_from_node(best_global_path)
+
+    score_total, score_inter, score_final = score_crosslinks(
+        ucrosslinks,
+        final_path_coords,
+        final_path_CA_inds
+    )
+
+    print("\n===== FINAL COMPLEX CROSSLINK SCORES =====")
+    print(f"Total crosslink score : {score_total:.3f}")
+    print(f"Inter-chain score     : {score_inter:.3f}")
+    print(f"Final weighted score  : {score_final:.3f}")
 
     return best_global_path
 
