@@ -13,7 +13,7 @@ import pdb
 import json
 import logging
 
-
+logger = logging.getLogger(__name__)
 
 ##############FUNCTIONS##############
 def setup_logger(log_file):
@@ -220,45 +220,6 @@ def cal_crosslink_distance(path_coords: dict,
     dist = np.linalg.norm(a_coord - b_coord)
     return round(dist, 2), dist <= crosslinker_length
 
-# def score_crosslinks(ucrosslinks:pd.DataFrame,
-#                      path_coords,
-#                      path_CA_inds,
-#                      crosslinker_length:int=45,
-#                      inter_prop=0.8):
-#     total_crosslinks = len(ucrosslinks)
-#     if total_crosslinks == 0:
-#         return 1.0, 1.0, 1.0
-    
-#     # === 新增：chain name → index 映射 ===
-#     chain_to_idx = {chain: i for i, chain in enumerate(path_coords.keys())} \
-#         if isinstance(path_coords, dict) else None
-    
-#     consist_num = 0
-#     interlink_num = 0
-#     interlink_consist_num = 0
-#     for _,row in ucrosslinks.iterrows(): 
-#         distance,if_consist= cal_crosslink_distance(path_coords, 
-#                                               path_CA_inds, 
-#                                               row["ChainA"], 
-#                                               row["ResidueA"], 
-#                                               row["ChainB"], 
-#                                               row["ResidueB"],
-#                                               crosslinker_length)
-#         consist_num+=if_consist
-        
-#         if row["ChainA"] != row["ChainB"]:
-#             interlink_num += 1
-#             interlink_consist_num += if_consist
-
-#     score_total = consist_num / total_crosslinks
-#     if  interlink_num == 0:
-#         score_inter = 1.0
-#     else:
-#         score_inter = interlink_consist_num/interlink_num
-
-#     crosslink_score=(1-inter_prop)*score_total+inter_prop*score_inter
-
-#     return score_total, score_inter, crosslink_score
 
 def score_crosslinks(ucrosslinks: pd.DataFrame,
                      path_coords: dict,
@@ -294,37 +255,6 @@ def score_crosslinks(ucrosslinks: pd.DataFrame,
 ########################################
 
 # plDDT-based score
-# def score_structure(path_coords, path_CB_inds, path_plddt):
-#     '''Score all interfaces in the current complex
-#     '''
-
-#     structure_score = 0
-#     chain_inds = np.arange(len(path_coords))
-#     #Get interfaces per chain
-#     for i in chain_inds:
-#         chain_coords = path_coords[i]
-#         chain_CB_inds = path_CB_inds[i]
-#         l1 = len(chain_CB_inds)
-#         chain_CB_coords = chain_coords[chain_CB_inds]
-#         chain_plddt = path_plddt[i]
-
-#         for int_i in np.setdiff1d(chain_inds, i):
-#             int_chain_CB_coords = path_coords[int_i][path_CB_inds[int_i]]
-#             int_chain_plddt = path_plddt[int_i]
-#             #Calc 2-norm
-#             mat = np.append(chain_CB_coords,int_chain_CB_coords,axis=0)
-#             a_min_b = mat[:,np.newaxis,:] -mat[np.newaxis,:,:]
-#             dists = np.sqrt(np.sum(a_min_b.T ** 2, axis=0)).T
-#             contact_dists = dists[:l1,l1:]
-#             contacts = np.argwhere(contact_dists<=8)
-#             #The first axis contains the contacts from chain 1
-#             #The second the contacts from chain 2
-#             if contacts.shape[0]>0:
-#                 av_if_plDDT =  np.concatenate((chain_plddt[contacts[:,0]], int_chain_plddt[contacts[:,1]])).mean()
-#                 structure_score +=  np.log10(contacts.shape[0]+1)*av_if_plDDT
-    
-#     return structure_score
-
 def score_structure(path_coords: dict,
                     path_CB_inds: dict,
                     path_plddt: dict):
@@ -737,45 +667,9 @@ class MonteCarloTreeSearchNode():
                     rollout_score = v.rollout() #Rollout
                     v.back_prop(rollout_score) #Backpropagate the score
                     nchains_in_path = len(v.path) #Check path len
-                    print(v.path)
+                    logger.info(" -> ".join(v.path))
 
         return v
-
-
-# def find_paths(edges, sources, pairdir, chain_lens, outdir):
-#     '''Find all paths that visits all nodes fulfilling the criteria:
-#     No overlapping chains (50% of shortest chain's CAs within 5 Å btw two chains)
-#     '''
-
-#     #Get all nodes
-#     nodes = np.unique(edges)
-#     num_nodes = len(nodes)
-#     #Run Monte Carlo Tree Search
-#     #Read source - start at chain A
-#     sps = edges[np.argwhere(edges=='A')[:,0]][0]
-#     ssr = sources[np.argwhere(edges=='A')[:,0]][0]
-#     start_pairdir = os.path.join(pairdir,ssr+"/")
-#     pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(start_pairdir+ssr+'_'+sps[0]+'-'+ssr+'_'+sps[1]+'.pdb')
-#     #plDDT
-#     plddt_dir = pairdir
-#     with open(start_pairdir + ssr + '_confidences.json', 'r') as f:
-#         conf = json.load(f)
-#     source_plDDT = np.array(conf['atom_plddts'])
-
-#     si = 0
-#     for p_chain in ssr.split('_')[-1]:
-#         n_atoms = len(pdb_chains[p_chain])
-#         if p_chain == 'A':
-#             chain_plddt = source_plDDT[si : si + n_atoms]
-#         si += n_atoms
-
-#     root = MonteCarloTreeSearchNode('A', '', np.array(chain_coords['A']), np.array(chain_CA_inds['A']),
-#             np.array(chain_CB_inds['A']), np.array(pdb_chains['A']), chain_plddt,
-#             edges, sources, pairdir, plddt_dir, chain_lens, outdir,
-#             source=None, complex_scores=[0], parent=None, parent_path=[], total_chains=num_nodes)
-
-#     best_path = root.best_path()
-#     return best_path
 
 
 def build_path_dict_from_node(node):
@@ -802,16 +696,17 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
     best_global_path = None
     best_global_score = -np.inf
 
-    print(f"Running MCTS {num_nodes} times (each node as root)...")
+    logger.info(f"Running MCTS {num_nodes} times (each node as root)...")
 
     # === 遍历每个链作为 root ===
     for root_chain in nodes:
-        print(f"\n=== Running MCTS with root = {root_chain} ===")
+        logger.info(" ")
+        logger.info(f"=== Running MCTS with root = {root_chain} ===")
 
         # 找到任意一条与 root_chain 有关联的 edge/pair 用于读取初始 pdb
         idx = np.argwhere(edges == root_chain)
         if len(idx) == 0:
-            print(f"No edges found for chain {root_chain}, skipping.")
+            logger.info(f"No edges found for chain {root_chain}, skipping.")
             continue
 
         row = idx[0][0]
@@ -869,11 +764,11 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
             final_path_CA_inds
         )
 
-        print(
-            f"Root {root_chain} → "
-            f"MCTS = {final_score:.3f} | "
-            f"XL_total = {score_total:.3f} | "
-            f"XL_inter = {score_inter:.3f} | "
+        logger.info(
+            f"Root {root_chain}: "
+            f"MCTS = {final_score:.3f}, "
+            f"XL_total = {score_total:.3f}, "
+            f"XL_inter = {score_inter:.3f}, "
             f"XL_final = {score_final:.3f}"
         )
 
@@ -883,7 +778,8 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
             best_global_path = best_path
             best_global_root = root_chain
 
-    print(f"\n===== BEST GLOBAL ROOT = {best_global_root}, SCORE = {best_global_score:.3f} =====")
+    logger.info(" ")
+    logger.info(f"===== BEST GLOBAL ROOT = {best_global_root}, SCORE = {best_global_score:.3f} =====")
 
     # === 计算最终结构的 crosslink score ===
     final_path_coords, final_path_CA_inds = build_path_dict_from_node(best_global_path)
@@ -894,10 +790,11 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
         final_path_CA_inds
     )
 
-    print("\n===== FINAL COMPLEX CROSSLINK SCORES =====")
-    print(f"Total crosslink score : {score_total:.3f}")
-    print(f"Inter-chain score     : {score_inter:.3f}")
-    print(f"Final weighted score  : {score_final:.3f}")
+    logger.info(" ")
+    logger.info("===== FINAL COMPLEX CROSSLINK SCORES =====")
+    logger.info(f"Total crosslink score : {score_total:.3f}")
+    logger.info(f"Inter-chain score     : {score_inter:.3f}")
+    logger.info(f"Final weighted score  : {score_final:.3f}")
 
     return best_global_path
 
@@ -962,7 +859,8 @@ def create_path_df(best_path, outdir):
 
     #Save
     path_df.to_csv(outdir+'optimal_path.csv', index=None)
-    print('The best possible non-overlapping path has',len(path_df)+1,'chains')
+    # logger.info('The best possible non-overlapping path has',len(path_df)+1,'chains')
+    logger.info(f"The best possible non-overlapping path has {len(path_df)+1} chains")
 
 
 
@@ -975,6 +873,10 @@ def main(args):
     useqs = pd.read_csv(args.useqs)
     outdir = args.outdir
     ucrosslinks = pd.read_csv(args.ucrosslinks)
+
+    # Logs
+    log_file = os.path.join(outdir, "mcts_run.log")
+    logger = setup_logger(log_file)
 
     #Get all edges
     global edges, sources, chain_lens
@@ -1021,14 +923,14 @@ if __name__ == "__main__":
         cmd_args = parser.parse_args()
         # 若命令行没有给参数，则 fallback 到 debug_args
         if all(v is None for v in vars(cmd_args).values()):
-            print("No command-line arguments detected — using debug arguments.")
+            logger.info("No command-line arguments detected — using debug arguments.")
             main(debug_args)
         else:
             # 使用命令行参数
             main(cmd_args)
     except:
         # parse_args 出现异常则使用 debug 参数
-        print("Argument parsing failed — using debug arguments.")
+        logger.info("Argument parsing failed — using debug arguments.")
         main(debug_args)
     pass
 
