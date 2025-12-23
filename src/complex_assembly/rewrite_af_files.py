@@ -1,10 +1,12 @@
-from Bio.PDB import MMCIFParser,  Select
-from Bio.PDB import PDBParser, PDBIO, Select
+from Bio.PDB import MMCIFParser
+from Bio.PDB import PDBParser, PDBIO, Select, Superimposer
 import os
 import pandas as pd
 import json
 import numpy as np
-
+import shutil
+from pathlib import Path
+from mcts import score_crosslinks, read_pdb
 
 class ProteinNucleicAcidSelect(Select):
     def accept_residue(self, residue):
@@ -282,8 +284,190 @@ def split_trimer_to_dimers(rewrited_pdb_folder, output_folder):
 
 
 # TODO:初筛，对于每个二聚体只保留XL符合程度最高的，保存在另外的二聚体文件夹下
-# 或者不筛，直接随机挑选
+# ！！！Creative point
+# 对于每个二聚体相互进行align，选取与其他所有二聚体差距最小的共识二聚体
+# 保留相应pdb和confidence，并改名去掉数字
+# 新建all文件夹，将所有的pdb和json move到all文件夹中
+def select_most_central_pdb(pairs_folder: str):
+    """
+    遍历每个 dimer 文件夹，选择最接近其他二聚体的 PDB 文件，并复制到 dimer 文件夹中：
+    - 最优 PDB 文件重命名为前两段名 + ".pdb"
+    - 对应 confidence 文件也复制并重命名为 "<first_part>_confidences.json"
+    """
+    
+    pairs_path = Path(pairs_folder)
+    
+    # 遍历每个子文件夹
+    for dimer_folder in [d for d in pairs_path.iterdir() if d.is_dir()]:
+        all_folder = dimer_folder / "all"
+        all_folder.mkdir(exist_ok=True)
+        
+        # 移动文件到 all 文件夹
+        for item in dimer_folder.iterdir():
+            if item.is_file():
+                target_path = all_folder / item.name
+                # 如果目标文件存在，先删除
+                if target_path.exists():
+                    target_path.unlink()
+                shutil.move(str(item), str(all_folder))
+                print(f"Moved: {item} -> {all_folder}")
+        
+        pdb_files = [f for f in all_folder.iterdir() if f.suffix == ".pdb"]
+        if not pdb_files:
+            print(f"No PDB files in {all_folder}, skipping...")
+            continue
+        
+        parser = PDBParser(QUIET=True)
+        structures = [parser.get_structure(f.stem, str(f)) for f in pdb_files]
+        
+        # 提取 Cα 原子
+        def get_ca_atoms(structure):
+            ca_atoms = []
+            for model in structure:
+                for chain in model:
+                    for res in chain:
+                        if 'CA' in res:
+                            ca_atoms.append(res['CA'])
+            return ca_atoms
+        
+        # 计算 RMSD 矩阵
+        n = len(structures)
+        rmsd_matrix = np.zeros((n, n))
+        for i in range(n):
+            for j in range(i+1, n):
+                atoms1 = get_ca_atoms(structures[i])
+                atoms2 = get_ca_atoms(structures[j])
+                min_len = min(len(atoms1), len(atoms2))
+                atoms1 = atoms1[:min_len]
+                atoms2 = atoms2[:min_len]
+                sup = Superimposer()
+                sup.set_atoms(atoms1, atoms2)
+                rmsd_matrix[i, j] = sup.rms
+                rmsd_matrix[j, i] = sup.rms
+        
+        avg_rmsd = rmsd_matrix.mean(axis=1)
+        best_index = np.argmin(avg_rmsd)
+        
+        print("RMSD Matrix:")
+        print(rmsd_matrix)
+        print("Average RMSD:", avg_rmsd)
+        print(pdb_files[best_index])
+        
+        # 复制最优 PDB 文件
+        src_file = pdb_files[best_index]
+        base_name = src_file.stem
+        cleaned_name = "-".join(base_name.split("-")[:2]) + ".pdb"
+        tgt_file = dimer_folder / cleaned_name
+        shutil.copy(src_file, tgt_file)
+        
+        # 复制对应 confidence 文件
+        parts = base_name.split("-")
+        first_part = parts[0].split("_")[0]
+        if parts[-1].isdigit():
+            conf_name = f"{first_part}-{parts[-1]}_confidences.json"
+        else:
+            conf_name = f"{first_part}_confidences.json"
+        src_conf_file = src_file.parent / conf_name
+        tgt_conf_file = dimer_folder / f"{first_part}_confidences.json"
+        
+        if src_conf_file.exists():
+            shutil.copy(src_conf_file, tgt_conf_file)
+        else:
+            print(f"Warning: {src_conf_file} not found, skipping confidence file copy.")
 
+
+
+# def select_best_crosslink_pdb(pairs_folder: str,
+#                               ucrosslinks_path: str):
+#     """
+#     遍历每个 dimer 文件夹，选择 final_score 最大的 PDB 文件，并复制到 dimer 文件夹中：
+#     - 最优 PDB 文件重命名为前两段名 + ".pdb"
+#     - 对应 confidence 文件也复制并重命名为 "<first_part>_confidences.json"
+    
+#     参数：
+#     - pairs_folder: str, 包含各二聚体的文件夹
+#     - ucrosslinks_df: pd.DataFrame, 所有 crosslink 信息，列 ['ChainA','ResidueA','ChainB','ResidueB']
+#     - get_path_coords_and_CA_inds: function, 输入 PDB 文件路径，返回 (path_coords, path_CA_inds)
+#     """
+    
+#     pairs_path = Path(pairs_folder)
+#     ucrosslinks_df = pd.read_csv(ucrosslinks_path)
+    
+#     for dimer_folder in [d for d in pairs_path.iterdir() if d.is_dir()]:
+#         all_folder = dimer_folder / "all"
+#         all_folder.mkdir(exist_ok=True)
+        
+#         # 移动文件到 all 文件夹（覆盖已存在）
+#         for item in dimer_folder.iterdir():
+#             if item.is_file():
+#                 target_path = all_folder / item.name
+#                 if target_path.exists():
+#                     target_path.unlink()
+#                 shutil.move(str(item), str(all_folder))
+#                 print(f"Moved: {item} -> {all_folder}")
+        
+#         pdb_files = [f for f in all_folder.iterdir() if f.suffix == ".pdb"]
+#         if not pdb_files:
+#             print(f"No PDB files in {all_folder}, skipping...")
+#             continue
+        
+#         best_score = -1
+#         best_file = None
+        
+#         # 遍历 PDB 文件，计算 final_score
+#         for pdb_file in pdb_files:
+#             # 根据 PDB 文件生成 path_coords 和 path_CA_inds
+#             _, path_coords, path_CA_inds, _ = read_pdb(str(pdb_file))
+#             # pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds
+            
+#             # 获取 PDB 文件中存在的链
+#             chains_in_pdb = list(path_coords.keys())
+            
+#             # 过滤 crosslinks，只保留当前二聚体中的链
+#             ucrosslinks_filtered = ucrosslinks_df[
+#                 ucrosslinks_df["ChainA"].isin(chains_in_pdb) &
+#                 ucrosslinks_df["ChainB"].isin(chains_in_pdb)
+#             ]
+            
+#             # 计算 final_score
+#             _, inter_score, _ = score_crosslinks(
+#                 ucrosslinks=ucrosslinks_filtered,
+#                 path_coords=path_coords,
+#                 path_CA_inds=path_CA_inds,
+#                 crosslinker_length=45,
+#                 inter_prop=0.8
+#             )
+            
+#             if inter_score > best_score:
+#                 best_score = inter_score
+#                 best_file = pdb_file
+        
+#         if best_file is None:
+#             print(f"No valid PDB found for {dimer_folder.name}")
+#             continue
+        
+#         print(f"Best PDB for {dimer_folder.name}: {best_file.name} with score {best_score}")
+        
+#         # 复制最优 PDB 文件
+#         base_name = best_file.stem
+#         cleaned_name = "-".join(base_name.split("-")[:2]) + ".pdb"
+#         tgt_file = dimer_folder / cleaned_name
+#         shutil.copy(best_file, tgt_file)
+        
+#         # 复制对应 confidence 文件
+#         parts = base_name.split("-")
+#         first_part = parts[0].split("_")[0]
+#         if parts[-1].isdigit():
+#             conf_name = f"{first_part}-{parts[-1]}_confidences.json"
+#         else:
+#             conf_name = f"{first_part}_confidences.json"
+#         src_conf_file = best_file.parent / conf_name
+#         tgt_conf_file = dimer_folder / f"{first_part}_confidences.json"
+        
+#         if src_conf_file.exists():
+#             shutil.copy(src_conf_file, tgt_conf_file)
+#         else:
+#             print(f"Warning: {src_conf_file} not found, skipping confidence file copy.")
 
 if __name__ == "__main__":
 
@@ -299,8 +483,10 @@ if __name__ == "__main__":
 #     output_folder=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\rewrited_pdbs"
 # )
 
-    split_trimer_to_dimers(
-        r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\rewrited_pdbs", 
-        r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\pairs")
+    # split_trimer_to_dimers(
+    #     r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\rewrited_pdbs", 
+    #     r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\pairs")
+
+    select_most_central_pdb(r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\pairs")
     
     pass
