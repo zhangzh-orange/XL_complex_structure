@@ -120,17 +120,126 @@ def handle_interaction(
 # 4. 主流程（统一二元组 / 三元组）
 # ===============================================================
 
+# def prepare_multimer_jsons(
+#     complex_type,                    # "dimer" or "trimer"
+#     raw_crosslink_csv,               # raw XL csv
+#     fasta_file,                      # protein FASTA
+#     gene_list_excel,                 # Gene → UniProt
+#     pair_or_triplet_csv,             # "binary_pairs_in_ppi.csv" or "triplet_need_to_pred.csv"
+#     output_dir,                      # output JSON directory
+#     sample_times=3
+# ):
+
+#     print(f"=== Running: {complex_type} ===")
+#     Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+#     # ---------------------------------------
+#     # Load data
+#     # ---------------------------------------
+#     xl_df = pd.read_csv(raw_crosslink_csv)
+
+#     gene_map = pd.read_excel(gene_list_excel).set_index("Gene")["Entry"].to_dict()
+
+#     seq_map = {}
+#     with open(fasta_file) as f:
+#         for rec in SeqIO.parse(f, "fasta"):
+#             prot_id = rec.id.split("|")[1]
+#             seq_map[prot_id] = str(rec.seq)
+
+#     # get pairs or triplets
+#     prot_df = pd.read_csv(pair_or_triplet_csv)
+#     if complex_type == "dimer":
+#         complexes = [tuple(row) for row in prot_df[["p1", "p2"]].values]
+#     else:
+#         complexes = [tuple(row) for row in prot_df[["p1", "p2", "p3"]].values]
+
+#     # ---------------------------------------
+#     # Iterate
+#     # ---------------------------------------
+#     json_files = {}
+
+#     for sample_time in range(sample_times):
+#         for comp in complexes:
+#             print(comp)
+#             # ====== 构造 key ======
+#             key = "_".join(list(comp) + [str(sample_time)])
+
+#             # ====== 生成 tag → protein map ======
+#             tags = ["A", "B", "C"]
+#             prot_map = {}
+#             for t, p in zip(tags, comp):
+#                 prot_map[t] = seq_map[gene_map[p]]
+
+#             # ====== JSON 初始化 ======
+#             json_files[key] = init_json_template(key, prot_map)
+#             crosslinks = json_files[key]["crosslinks"][0]["residue_pairs"]
+
+#             # ====== crosslink 搜索 ======
+#             seen = set()
+
+#             for _, row in xl_df.iterrows():
+#                 # 跳过空值
+#                 if any(pd.isna(v) or str(v).strip() == "" for v in [row.gene_a, row.gene_b, row.pepA, row.pepB]):
+#                     continue
+
+#                 a_genes = {g.strip() for g in row.gene_a.split(";")}
+#                 b_genes = {g.strip() for g in row.gene_b.split(";")}
+
+#                 pepA = row.pepA
+#                 pepB = row.pepB
+
+#                 # ========== dimer ==========
+#                 if complex_type == "dimer":
+#                     p1, p2 = comp
+#                     handle_interaction(
+#                         p1, p2, a_genes, b_genes,
+#                         seq_map={p: seq_map[gene_map[p]] for p in comp},
+#                         pepA=pepA, pepB=pepB,
+#                         tagA="A", tagB="B",
+#                         crosslinks=crosslinks, seen=seen
+#                     )
+
+#                 # ========== trimer ==========
+#                 else:
+#                     p1, p2, p3 = comp
+
+#                     seq_local = {p: seq_map[gene_map[p]] for p in comp}
+
+#                     # p1-p2
+#                     handle_interaction(p1, p2, a_genes, b_genes, seq_local, pepA, pepB, "A", "B",
+#                                        crosslinks, seen)
+#                     # p1-p3
+#                     handle_interaction(p1, p3, a_genes, b_genes, seq_local, pepA, pepB, "A", "C",
+#                                        crosslinks, seen)
+#                     # p2-p3
+#                     handle_interaction(p2, p3, a_genes, b_genes, seq_local, pepA, pepB, "B", "C",
+#                                        crosslinks, seen)
+
+#             # 过滤唯一 crosslinks
+#             json_files[key]["crosslinks"][0]["residue_pairs"] = \
+#                 select_unique_crosslinks(crosslinks)
+
+#     # ---------------------------------------
+#     # Save JSON
+#     # ---------------------------------------
+#     for key, data in json_files.items():
+#         out = Path(output_dir) / f"{key}.json"
+#         with open(out, "w", encoding="utf-8") as f:
+#             json.dump(data, f, indent=4, ensure_ascii=False)
+
+#     print(f"✔ Completed: {len(json_files)} JSON files saved to {output_dir}")
+
 def prepare_multimer_jsons(
-    complex_type,                    # "dimer" or "trimer"
     raw_crosslink_csv,               # raw XL csv
     fasta_file,                      # protein FASTA
     gene_list_excel,                 # Gene → UniProt
-    pair_or_triplet_csv,             # "binary_pairs_in_ppi.csv" or "triplet_need_to_pred.csv"
+    triplet_csv,                     # triplet_need_to_pred.csv
     output_dir,                      # output JSON directory
-    sample_times=3
+    sample_times=3,
+    trimer_max_len=3000
 ):
 
-    print(f"=== Running: {complex_type} ===")
+    print("=== Running: auto multimer (prefer trimer) ===")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # ---------------------------------------
@@ -146,12 +255,9 @@ def prepare_multimer_jsons(
             prot_id = rec.id.split("|")[1]
             seq_map[prot_id] = str(rec.seq)
 
-    # get pairs or triplets
-    prot_df = pd.read_csv(pair_or_triplet_csv)
-    if complex_type == "dimer":
-        complexes = [tuple(row) for row in prot_df[["p1", "p2"]].values]
-    else:
-        complexes = [tuple(row) for row in prot_df[["p1", "p2", "p3"]].values]
+    # triplets
+    prot_df = pd.read_csv(triplet_csv)
+    triplets = [tuple(row) for row in prot_df[["p1", "p2", "p3"]].values]
 
     # ---------------------------------------
     # Iterate
@@ -159,64 +265,90 @@ def prepare_multimer_jsons(
     json_files = {}
 
     for sample_time in range(sample_times):
-        for comp in complexes:
+        for (p1, p2, p3) in triplets:
 
-            # ====== 构造 key ======
-            key = "_".join(list(comp) + [str(sample_time)])
+            # ====== local sequences ======
+            seq_local = {
+                p1: seq_map[gene_map[p1]],
+                p2: seq_map[gene_map[p2]],
+                p3: seq_map[gene_map[p3]],
+            }
 
-            # ====== 生成 tag → protein map ======
-            tags = ["A", "B", "C"]
-            prot_map = {}
-            for t, p in zip(tags, comp):
-                prot_map[t] = seq_map[gene_map[p]]
+            total_len = sum(len(seq) for seq in seq_local.values())
 
-            # ====== JSON 初始化 ======
-            json_files[key] = init_json_template(key, prot_map)
-            crosslinks = json_files[key]["crosslinks"][0]["residue_pairs"]
+            # ====== decide complexes to build ======
+            if total_len <= trimer_max_len:
+                complexes_to_build = [
+                    ("trimer", (p1, p2, p3))
+                ]
+            else:
+                print(f"trimer {(p1, p2, p3)} length = {total_len} > 3000")
+                complexes_to_build = [
+                    ("dimer", pair)
+                    for pair in combinations((p1, p2, p3), 2)
+                ]
 
-            # ====== crosslink 搜索 ======
-            seen = set()
+            # ====== build each complex ======
+            for complex_type, comp in complexes_to_build:
 
-            for _, row in xl_df.iterrows():
-                # 跳过空值
-                if any(pd.isna(v) or str(v).strip() == "" for v in [row.gene_a, row.gene_b, row.pepA, row.pepB]):
-                    continue
+                tags = ["A", "B", "C"] if complex_type == "trimer" else ["A", "B"]
 
-                a_genes = {g.strip() for g in row.gene_a.split(";")}
-                b_genes = {g.strip() for g in row.gene_b.split(";")}
+                key = "_".join(list(comp) + [str(sample_time)])
 
-                pepA = row.pepA
-                pepB = row.pepB
+                print(f"{key} (len={sum(len(seq_local[p]) for p in comp)})")
 
-                # ========== dimer ==========
-                if complex_type == "dimer":
-                    p1, p2 = comp
-                    handle_interaction(
-                        p1, p2, a_genes, b_genes,
-                        seq_map={p: seq_map[gene_map[p]] for p in comp},
-                        pepA=pepA, pepB=pepB,
-                        tagA="A", tagB="B",
-                        crosslinks=crosslinks, seen=seen
-                    )
+                prot_map = {t: seq_local[p] for t, p in zip(tags, comp)}
 
-                # ========== trimer ==========
-                else:
-                    p1, p2, p3 = comp
-                    seq_local = {p: seq_map[gene_map[p]] for p in comp}
+                json_files[key] = init_json_template(key, prot_map)
+                crosslinks = json_files[key]["crosslinks"][0]["residue_pairs"]
 
-                    # p1-p2
-                    handle_interaction(p1, p2, a_genes, b_genes, seq_local, pepA, pepB, "A", "B",
-                                       crosslinks, seen)
-                    # p1-p3
-                    handle_interaction(p1, p3, a_genes, b_genes, seq_local, pepA, pepB, "A", "C",
-                                       crosslinks, seen)
-                    # p2-p3
-                    handle_interaction(p2, p3, a_genes, b_genes, seq_local, pepA, pepB, "B", "C",
-                                       crosslinks, seen)
+                seen = set()
 
-            # 过滤唯一 crosslinks
-            json_files[key]["crosslinks"][0]["residue_pairs"] = \
-                select_unique_crosslinks(crosslinks)
+                # ====== crosslink search ======
+                for _, row in xl_df.iterrows():
+
+                    if any(pd.isna(v) or str(v).strip() == ""
+                           for v in [row.gene_a, row.gene_b, row.pepA, row.pepB]):
+                        continue
+
+                    a_genes = {g.strip() for g in row.gene_a.split(";")}
+                    b_genes = {g.strip() for g in row.gene_b.split(";")}
+
+                    pepA = row.pepA
+                    pepB = row.pepB
+
+                    # ---------- dimer ----------
+                    if complex_type == "dimer":
+                        pA, pB = comp
+                        handle_interaction(
+                            pA, pB,
+                            a_genes, b_genes,
+                            seq_map={p: seq_local[p] for p in comp},
+                            pepA=pepA, pepB=pepB,
+                            tagA="A", tagB="B",
+                            crosslinks=crosslinks,
+                            seen=seen
+                        )
+
+                    # ---------- trimer ----------
+                    else:
+                        pA, pB, pC = comp
+
+                        handle_interaction(pA, pB, a_genes, b_genes,
+                                           seq_local, pepA, pepB,
+                                           "A", "B", crosslinks, seen)
+
+                        handle_interaction(pA, pC, a_genes, b_genes,
+                                           seq_local, pepA, pepB,
+                                           "A", "C", crosslinks, seen)
+
+                        handle_interaction(pB, pC, a_genes, b_genes,
+                                           seq_local, pepA, pepB,
+                                           "B", "C", crosslinks, seen)
+
+                # ====== unique XL ======
+                json_files[key]["crosslinks"][0]["residue_pairs"] = \
+                    select_unique_crosslinks(crosslinks)
 
     # ---------------------------------------
     # Save JSON
@@ -227,6 +359,13 @@ def prepare_multimer_jsons(
             json.dump(data, f, indent=4, ensure_ascii=False)
 
     print(f"✔ Completed: {len(json_files)} JSON files saved to {output_dir}")
+
+
+def total_length_exceed(comp, gene_map, seq_map, limit=3000):
+    total_len = 0
+    for p in comp:
+        total_len += len(seq_map[gene_map[p]])
+    return total_len > limit
 
 
 if __name__ == "__main__":
@@ -243,11 +382,11 @@ if __name__ == "__main__":
 
     # # ====== trimer ======
     prepare_multimer_jsons(
-        complex_type="trimer",
-        raw_crosslink_csv=r"N:\08_NK_structure_prediction\data\Exocyst_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_Exocyst.csv",
-        fasta_file=r"N:\08_NK_structure_prediction\data\Exocyst_complex\Exocyst.fasta",
-        gene_list_excel=r"N:\08_NK_structure_prediction\data\Exocyst_complex\Exocyst_gene_list.xlsx",
-        pair_or_triplet_csv=r"N:\08_NK_structure_prediction\data\Exocyst_complex\triplet_need_to_pred.csv",
-        output_dir=r"N:\08_NK_structure_prediction\data\Exocyst_complex\jsons_3mer",
+        # complex_type="trimer",
+        raw_crosslink_csv=r"N:\08_NK_structure_prediction\data\COPI_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_COPI.csv",
+        fasta_file=r"N:\08_NK_structure_prediction\data\COPI_complex\COPI.fasta",
+        gene_list_excel=r"N:\08_NK_structure_prediction\data\COPI_complex\COPI_gene_list.xlsx",
+        triplet_csv=r"N:\08_NK_structure_prediction\data\COPI_complex\triplet_need_to_pred.csv",
+        output_dir=r"N:\08_NK_structure_prediction\data\COPI_complex\jsons",
     )
     pass

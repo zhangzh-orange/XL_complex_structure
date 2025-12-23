@@ -10,9 +10,9 @@ import pandas as pd
 from Bio import SeqIO
 import re
 
-binary_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\binary_pairs_in_ppi.csv")
-chains_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\chains.csv")
-fasta_file = r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\CORVET.fasta"
+binary_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\Exocyst_complex\binary_pairs_in_ppi.csv")
+chains_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\chains.csv")
+fasta_file = r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\Exocyst.fasta"
 
 network_df = pd.DataFrame(columns=["Chain1","Chain2","Source"])
 mapping = chains_df.set_index("Gene")["Chain"].to_dict()
@@ -43,5 +43,5 @@ for record in SeqIO.parse(fasta_file, "fasta"):
 useq_df["Sequence"] = useq_df["Useq"].map(gene_seq_map)
 
 print(useq_df)
-network_df.to_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\network.csv",index=False)
-useq_df.to_csv(r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\useqs.csv",index=False)
+network_df.to_csv(r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\network.csv",index=False)
+useq_df.to_csv(r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\useqs.csv",index=False)

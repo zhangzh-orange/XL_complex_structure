@@ -206,13 +206,13 @@ def cal_crosslink_distance(path_coords: dict,
                            a_res: int,
                            b_chain: str,
                            b_res: int,
-                           crosslinker_length: int = 45):
+                           crosslinker_length: int = 40):
 
     if a_chain not in path_coords or b_chain not in path_coords:
         return np.inf, False
 
-    a_ca_atom = path_CA_inds[a_chain][a_res]
-    b_ca_atom = path_CA_inds[b_chain][b_res]
+    a_ca_atom = path_CA_inds[a_chain][a_res-1]
+    b_ca_atom = path_CA_inds[b_chain][b_res-1]
 
     a_coord = path_coords[a_chain][a_ca_atom]
     b_coord = path_coords[b_chain][b_ca_atom]
@@ -224,8 +224,8 @@ def cal_crosslink_distance(path_coords: dict,
 def score_crosslinks(ucrosslinks: pd.DataFrame,
                      path_coords: dict,
                      path_CA_inds: dict,
-                     crosslinker_length: int = 45,
-                     inter_prop: float = 0.8):
+                     crosslinker_length: int = 40,
+                     inter_prop: float = 1): # default 0.8
 
     if len(ucrosslinks) == 0:
         return 1.0, 1.0, 1.0
@@ -299,7 +299,7 @@ def score_structure(path_coords: dict,
 def score_complex(path_coords, path_CA_inds, path_CB_inds, path_plddt, ucrosslinks):
     s_struct = score_structure(path_coords, path_CB_inds, path_plddt)
     _, _, s_xl = score_crosslinks(ucrosslinks, path_coords, path_CA_inds)
-    return s_struct * s_xl
+    return s_struct * s_xl # * s_xl # default：no square
 
 class MonteCarloTreeSearchNode():
     '''Based on https://ai-boson.github.io/mcts/
