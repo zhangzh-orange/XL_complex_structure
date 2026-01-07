@@ -103,6 +103,31 @@ def analyze_complexes(G: nx.Graph, protein_list: list[str]):
 
     return binary_pairs_in_ppi, triplet_in_ppi
 
+def clean_residue_pair_file(input_path, manual_map):
+    df = pd.read_csv(input_path)
+
+    for col in ["gene_a", "gene_b"]:
+        if col not in df.columns:
+            raise ValueError(f"列 {col} 不存在于文件中")
+
+        # 1️⃣ 统一格式：分号两边只保留一个空格
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.split(";")
+            .apply(lambda x: "; ".join(s.strip() for s in x))
+        )
+
+        # 2️⃣ 使用 replace（不是 map）
+        df[col] = df[col].replace(manual_map)
+
+    # ====== 输出 ======
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+    out_path = os.path.join(os.path.dirname(input_path),
+                            base_name + "_cleaned.csv")
+
+    df.to_csv(out_path, index=False)
+    print("清洗完成：", out_path)
 
 # -------------------------------------------------------------
 # 6. 主流程
@@ -110,8 +135,8 @@ def analyze_complexes(G: nx.Graph, protein_list: list[str]):
 def main():
 
     # ====== 文件路径 ======
-    input_path = r"N:\08_NK_structure_prediction\data\Exocyst_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_Exocyst.csv"
-    out_folder = r"N:\08_NK_structure_prediction\data\Exocyst_complex"
+    input_path = r"N:\08_NK_structure_prediction\data\WASH_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_WASH.csv"
+    out_folder = r"N:\08_NK_structure_prediction\data\WASH_complex"
 
     # ====== 读取数据并构建网络 ======
     df = load_interaction_data(input_path)
@@ -123,19 +148,39 @@ def main():
 
     # ====== 清洗节点名称 ======
     manual_map = {
-        'RAB11B; RAB11A': 'RAB11B',
-        'EXOC6; EXOC6': 'EXOC6',
-        'EXOC6; EXOC6B': 'EXOC6',
-        'EXOC8; EXOC8': 'EXOC8',
-        'EXOC4; EXOC4':'EXOC4'
+        'WASH3P; WASH3P; WASH2P; WASH2P; WASHC1; WASHC1':"WASHC1", 
+        'WASHC2A; WASHC2C; WASHC2A; WASHC2C; WASHC2A; WASHC2C':"WASHC2C", 
+        'WASH3P; WASH2P; WASHC1':"WASHC1", 
+        'WASHC4; WASHC4; WASHC4':"WASHC4", 
+        'WASHC5; WASHC5; WASHC5':"WASHC5", 
+        'WASHC3; WASHC3; WASHC3':"WASHC3", 
+        'FKBP15; FKBP15; FKBP15':"FKBP15", 
+        'WASHC2A; WASHC2A; WASHC2A; WASHC2C; WASHC2C; WASHC2C':"WASHC2C", 
+        'WASH3P; WASH2P; WASHC1; WASH3P; WASH2P; WASHC1':"WASHC1", 
+        'WASHC2A; WASHC2C':"WASHC2C", 
+        'WASHC4; WASHC4':"WASHC4", 
+        'WASH2P; WASHC1':"WASHC1", 
+        'WASHC2A; WASHC2A; WASHC2C; WASHC2C':"WASHC2C", 
+        'WASH2P; WASHC1; WASH2P; WASHC1':"WASHC1", 
+        'WASHC3; WASHC3':"WASHC3"
     }
     G = clean_node_names(G, manual_map)
 
     # ====== 绘图 ======
     plot_ppi_network(G, "COPI Complex PPI Network (Cleaned Names)")
 
+    # 重新清理原文件
+    clean_residue_pair_file(input_path, manual_map)
+
     # ====== 复合体分析 ======
-    protein_list = ["EXOC1", "EXOC2", "EXOC3","EXOC4","EXOC5","EXOC6","EXOC7","EXOC8"]
+    protein_list = ["WASHC1",
+                    "WASHC2C",
+                    "WASHC3",
+                    "WASHC4",
+                    "WASHC5",
+                    "ENTR1",
+                    "FKBP15"
+                    ]
     binary_pairs_in_ppi, triplet_in_ppi = analyze_complexes(G, protein_list)
 
     # ====== 输出结果 ======

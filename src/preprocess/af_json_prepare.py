@@ -236,7 +236,7 @@ def prepare_multimer_jsons(
     triplet_csv,                     # triplet_need_to_pred.csv
     output_dir,                      # output JSON directory
     sample_times=3,
-    trimer_max_len=3000
+    trimer_max_len= 2500 # 2750
 ):
 
     print("=== Running: auto multimer (prefer trimer) ===")
@@ -281,8 +281,9 @@ def prepare_multimer_jsons(
                 complexes_to_build = [
                     ("trimer", (p1, p2, p3))
                 ]
+                # print(f"{(p1, p2, p3)} lenth = {total_len}")
             else:
-                print(f"trimer {(p1, p2, p3)} length = {total_len} > 3000")
+                print(f"trimer {(p1, p2, p3)} length = {total_len} > 2750")
                 complexes_to_build = [
                     ("dimer", pair)
                     for pair in combinations((p1, p2, p3), 2)

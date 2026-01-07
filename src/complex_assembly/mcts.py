@@ -810,7 +810,7 @@ def write_pdb(best_path, outdir):
     current_node = best_path
     #Open a file to write to
     os.makedirs(outdir, exist_ok=True)
-    with open(outdir+'best_complex.pdb', 'w') as file:
+    with open(outdir+r'/best_complex.pdb', 'w') as file:
         while current_node.parent:
             chain_pdb = current_node.pdb
             chain_coords = current_node.chain_coords
@@ -858,7 +858,7 @@ def create_path_df(best_path, outdir):
     path_df = pd.DataFrame.from_dict(path_df)
 
     #Save
-    path_df.to_csv(outdir+'optimal_path.csv', index=None)
+    path_df.to_csv(outdir+r'/optimal_path.csv', index=None)
     # logger.info('The best possible non-overlapping path has',len(path_df)+1,'chains')
     logger.info(f"The best possible non-overlapping path has {len(path_df)+1} chains")
 

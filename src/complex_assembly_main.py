@@ -39,45 +39,46 @@ logger = logging.getLogger(__name__)
 # 手动准备相应fasta文件
 
 # 生成其他文件，network_prepare, 准备为function
+# useq
 
 # 准备ucrosslink文件
-# useq_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\useqs.csv")
-# residue_pair_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\Exocyst_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_Exocyst.csv")
+# useq_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\WASH_complex\assembled_complex\useqs.csv")
+# residue_pair_df = pd.read_csv(r"N:\08_NK_structure_prediction\data\WASH_complex\heklopit_pl3017_frd1ppi_sc151_fdr1rp_WASH_cleaned.csv")
 # ucrosslinks = crosslink_prepare(useq_df, residue_pair_df)
-# ucrosslinks.to_csv(r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\ucrosslinks.csv",index=False)
+# ucrosslinks.to_csv(r"N:\08_NK_structure_prediction\data\WASH_complex\assembled_complex\ucrosslinks.csv",index=False)
 
 
 # 重写pdb
 # rewrite_af_cif_structure(
-#     af_pred_folder=r"N:\08_NK_structure_prediction\data\Exocyst_complex\afx_pred\3mer",
-#     chains_df_path=r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\chains.csv",
-#     output_folder=r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\rewrited_pdbs"
+#     af_pred_folder=r"N:\08_NK_structure_prediction\data\WASH_complex\afx_pred",
+#     chains_df_path=r"N:\08_NK_structure_prediction\data\WASH_complex\assembled_complex\chains.csv",
+#     output_folder=r"N:\08_NK_structure_prediction\data\WASH_complex\assembled_complex\rewrited_pdbs"
 # )
 
 # 重写confidence文件
 # rewrite_af_score_file(
-#     af_pred_folder=r"N:\08_NK_structure_prediction\data\Exocyst_complex\afx_pred\3mer",
-#     chains_df_path=r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\chains.csv",
-#     output_folder=r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\rewrited_pdbs"
+#     af_pred_folder=r"N:\08_NK_structure_prediction\data\WASH_complex\afx_pred",
+#     chains_df_path=r"N:\08_NK_structure_prediction\data\WASH_complex\assembled_complex\chains.csv",
+#     output_folder=r"N:\08_NK_structure_prediction\data\WASH_complex\assembled_complex\rewrited_pdbs"
 # )
 
 # 拆分trimer to dimer
 # split_trimer_to_dimers(
-#     r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\rewrited_pdbs", 
-#     r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\pairs")
+#     r"N:\08_NK_structure_prediction\data\WASH_complex\assembled_complex\rewrited_pdbs", 
+#     r"N:\08_NK_structure_prediction\data\WASH_complex\assembled_complex\pairs")
 
 # 确定作为子部件装配的二聚体
-# select_most_central_pdb(r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\pairs")
+# select_most_central_pdb(r"N:\08_NK_structure_prediction\data\WASH_complex\assembled_complex\pairs")
 
 # 2. MCT运行
 # ====== 可选：调试模式（无命令行时使用） ======
 # 如果你希望在调试时手动指定参数，请修改以下路径：
 debug_args = argparse.Namespace(
-    network=r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\network.csv",
-    pairdir=r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\pairs/",
-    useqs=r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\useqs.csv",
-    ucrosslinks = r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\ucrosslinks.csv",
-    outdir=r"N:\08_NK_structure_prediction\data\Exocyst_complex\assembled_complex\output/",
+    network=r"N:\08_NK_structure_prediction\data\COPI_complex\assembled_complex\network.csv",
+    pairdir=r"N:\08_NK_structure_prediction\data\COPI_complex\assembled_complex\pairs/",
+    useqs=r"N:\08_NK_structure_prediction\data\COPI_complex\assembled_complex\useqs.csv",
+    ucrosslinks = r"N:\08_NK_structure_prediction\data\COPI_complex\assembled_complex\ucrosslinks.csv",
+    outdir=r"N:\08_NK_structure_prediction\data\COPI_complex\assembled_complex\output/",
 )
 
 # ====== 如果命令行有参数，则使用命令行参数 ======
