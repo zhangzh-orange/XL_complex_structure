@@ -17,20 +17,34 @@ logger = logging.getLogger(__name__)
 
 ##############FUNCTIONS##############
 def setup_logger(log_file):
+    """
+    Create and configure a logger that writes INFO-level logs
+    both to a file and to the console.
+
+    Parameters
+    ----------
+    log_file : str
+        Path to the log file. Parent directories will be created if needed.
+
+    Returns
+    -------
+    logging.Logger
+        Configured logger instance.
+    """
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    # 防止重复添加 handler（在 notebook / 多次运行时很重要）
+    # Prevent adding duplicate handlers (important for notebooks or repeated runs)
     if logger.handlers:
         return logger
 
-    # 文件输出
+    # File handler
     fh = logging.FileHandler(log_file, mode='w')
     fh.setLevel(logging.INFO)
 
-    # 屏幕输出
+    # Console handler
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
 
@@ -49,8 +63,21 @@ def setup_logger(log_file):
 
 
 def parse_atm_record(line):
-    '''Get the atm record
-    '''
+    """
+    Parse a single ATOM line from a PDB file into a structured record.
+
+    Parameters
+    ----------
+    line : str
+        A single line from a PDB file starting with 'ATOM'.
+
+    Returns
+    -------
+    dict
+        Dictionary containing parsed atom information such as
+        atom name, residue name, chain ID, coordinates, occupancy,
+        and B-factor.
+    """
     record = defaultdict()
     record['name'] = line[0:6].strip()
     record['atm_no'] = int(line[6:11])
@@ -71,8 +98,32 @@ def parse_atm_record(line):
 
 
 def read_pdb(pdbfile):
-    '''Read a pdb file per chain
-    '''
+    """
+    Read a PDB file and organize atom records by chain.
+
+    For each chain, this function stores:
+    - Raw ATOM lines
+    - Atom coordinates
+    - Indices of CA atoms
+    - Indices of CB atoms (or CA for glycine)
+
+    Parameters
+    ----------
+    pdbfile : str
+        Path to the PDB file.
+
+    Returns
+    -------
+    tuple
+        pdb_chains : dict
+            Mapping from chain ID to list of ATOM lines.
+        chain_coords : dict
+            Mapping from chain ID to list of atomic coordinates.
+        chain_CA_inds : dict
+            Mapping from chain ID to indices of CA atoms.
+        chain_CB_inds : dict
+            Mapping from chain ID to indices of CB atoms (or CA for GLY).
+    """
     pdb_chains = {}
     chain_coords = {}
     chain_CA_inds = {}
@@ -104,33 +155,34 @@ def read_pdb(pdbfile):
 
     return pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds
 
-# def check_overlaps(cpath_coords,cpath_CA_inds,n_coords,n_CA_inds):
-#     '''Check assembly overlaps of new chain
-#     '''
-#     #Check CA overlap
-#     n_CAs = n_coords[n_CA_inds] #New chain CAs
-#     l1 = (len(n_CAs))
-#     #Go through all previous CAs and compare
-
-#     for i in range(len(cpath_coords)):
-#         p_CAs = cpath_coords[i][cpath_CA_inds[i]]
-#         #Calc 2-norm
-#         mat = np.append(n_CAs, p_CAs,axis=0)
-#         a_min_b = mat[:,np.newaxis,:] -mat[np.newaxis,:,:]
-#         dists = np.sqrt(np.sum(a_min_b.T ** 2, axis=0)).T
-#         contact_dists = dists[l1:,:l1]
-#         overlap = np.argwhere(contact_dists<=5) #5 Å threshold
-#         if overlap.shape[0]>0.5*min(l1,len(p_CAs)): #If over 50% overlap
-#             return True
-
-#     return False
 
 def check_overlaps(path_coords: dict,
                    path_CA_inds: dict,
                    new_coords: np.ndarray,
                    new_CA_inds: np.ndarray):
     """
-    判断新链是否与已有 path 中任一链发生严重重叠
+    Check whether a new chain has severe spatial overlap with any
+    existing chain in the current path.
+
+    The overlap is evaluated using Cα atoms only. If more than 50%
+    of the Cα atoms of the shorter chain are within 5 Å of the other
+    chain's Cα atoms, the chains are considered overlapping.
+
+    Parameters
+    ----------
+    path_coords : dict
+        Dictionary mapping chain IDs to arrays of atomic coordinates.
+    path_CA_inds : dict
+        Dictionary mapping chain IDs to indices of Cα atoms.
+    new_coords : np.ndarray
+        Coordinate array for the new chain.
+    new_CA_inds : np.ndarray
+        Indices of Cα atoms in the new chain.
+
+    Returns
+    -------
+    bool
+        True if a severe overlap is detected, False otherwise.
     """
 
     new_CAs = new_coords[new_CA_inds]
@@ -143,70 +195,55 @@ def check_overlaps(path_coords: dict,
         d = mat[:, None, :] - mat[None, :, :]
         dists = np.sqrt((d ** 2).sum(axis=-1))
 
-        contact = dists[:l1, l1:] <= 5.0
-        if contact.sum() > 0.5 * min(l1, len(p_CAs)):
+        overlap = dists[:l1, l1:] <= 5.0 # 5 Å threshold
+        if overlap.sum() > 0.5 * min(l1, len(p_CAs)):
             return True
 
     return False
 
 ######## Crosslink-based Score ########
-# def cal_crosslink_distance(path_coords, 
-#                            path_CA_inds,
-#                            a_chain_inds:str, 
-#                        a_AA_inds:int, 
-#                        b_chain_inds:str, 
-#                        b_AA_inds:int,
-#                        crosslinker_length:int=45):
-#     """Calculate distance of two crosslinked residues
-
-#     Parameters
-#     ----------
-#     path_coords:
-
-#     path_CB_inds:
-
-#     a_chain_inds : str
-#         第一个位点的所在链单字母代号
-#     a_AA_inds : int
-#         第一个位点的氨基酸index
-#     b_chain_inds : str
-#         第二个位点的所在链的单字母代号
-#     b_AA_inds : int
-#         第二个位点的氨基酸index
-#     crosslinker_length : int, optional
-#         Restriction of max length of crosslinker, by default DSBSO with length 45 A
-
-#     Returns
-#     -------
-#     distance: float
-#         distance of two crosslinked residues
-#     if_consist: bool
-#         if align with special crosslinker length (smaller or equal)
-#     """
-    
-    
-#     a_CA_inds = path_CA_inds[a_chain_inds][a_AA_inds]
-#     b_CA_inds = path_CA_inds[b_chain_inds][b_AA_inds]
-
-#     a_CA_coords = path_coords[a_chain_inds][a_CA_inds]
-#     b_CA_coords = path_coords[b_chain_inds][b_CA_inds]
-
-#     def cal_euclidean_distance(p1, p2):
-#         x1, y1, z1 = p1
-#         x2, y2, z2 = p2
-#         return math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
-#     distance = cal_euclidean_distance(a_CA_coords,b_CA_coords)
-    
-#     consist_with_crosslinker_length = (distance<=crosslinker_length)
-#     return round(distance, 2), consist_with_crosslinker_length
-
 def cal_crosslink_distance(path_coords: dict,
                            path_CA_inds: dict,
                            a_chain: str,
                            a_res: int,
                            b_chain: str,
                            b_res: int,
-                           crosslinker_length: int = 40):
+                           crosslinker_length: int = 35):
+    """
+    Calculate the Cα–Cα distance between two residues and determine
+    whether it satisfies a crosslinker distance constraint.
+
+    The distance is computed between the Cα atoms of the specified
+    residues from two chains. If either chain is missing, the
+    distance is treated as infinite.
+
+    Parameters
+    ----------
+    path_coords : dict
+        Dictionary mapping chain IDs to arrays of atomic coordinates.
+    path_CA_inds : dict
+        Dictionary mapping chain IDs to indices of Cα atoms.
+    a_chain : str
+        Chain ID of the first residue.
+    a_res : int
+        Residue index (1-based) of the first residue.
+    b_chain : str
+        Chain ID of the second residue.
+    b_res : int
+        Residue index (1-based) of the second residue.
+    crosslinker_length : int, optional
+        Maximum allowed Cα–Cα distance for the crosslinker (in Å),
+        by default 35.
+
+    Returns
+    -------
+    tuple
+        distance : float
+            Cα–Cα distance rounded to two decimal places.
+        satisfied : bool
+            True if the distance is within the crosslinker length,
+            False otherwise.
+    """
 
     if a_chain not in path_coords or b_chain not in path_coords:
         return np.inf, False
@@ -224,8 +261,42 @@ def cal_crosslink_distance(path_coords: dict,
 def score_crosslinks(ucrosslinks: pd.DataFrame,
                      path_coords: dict,
                      path_CA_inds: dict,
-                     crosslinker_length: int = 40,
-                     inter_prop: float = 1): # default 0.8
+                     crosslinker_length: int = 35,
+                     inter_prop: float = 1):
+    """
+    Score how well a structural model satisfies a set of crosslinking restraints.
+
+    Each crosslink is evaluated based on the Cα–Cα distance between the specified
+    residues. A crosslink is considered satisfied if the distance is within the
+    specified crosslinker length. Scores are computed for all crosslinks and
+    separately for inter-chain crosslinks.
+
+    Parameters
+    ----------
+    ucrosslinks : pd.DataFrame
+        DataFrame containing crosslink information with columns:
+        ['ChainA', 'ResidueA', 'ChainB', 'ResidueB'].
+    path_coords : dict
+        Dictionary mapping chain IDs to arrays of atomic coordinates.
+    path_CA_inds : dict
+        Dictionary mapping chain IDs to indices of Cα atoms.
+    crosslinker_length : int, optional
+        Maximum allowed Cα–Cα distance for a satisfied crosslink (in Å),
+        by default 35.
+    inter_prop : float, optional
+        Weighting factor for inter-chain crosslink satisfaction in the
+        final score (0–1), by default 1.
+
+    Returns
+    -------
+    tuple
+        score_total : float
+            Fraction of all crosslinks that are satisfied.
+        score_inter : float
+            Fraction of inter-chain crosslinks that are satisfied.
+        final_score : float
+            Weighted combination of total and inter-chain scores.
+    """
 
     if len(ucrosslinks) == 0:
         return 1.0, 1.0, 1.0
@@ -252,9 +323,8 @@ def score_crosslinks(ucrosslinks: pd.DataFrame,
 
     final = (1 - inter_prop) * score_total + inter_prop * score_inter
     return score_total, score_inter, final
-########################################
 
-# plDDT-based score
+######## plDDT-based Score ########
 def score_structure(path_coords: dict,
                     path_CB_inds: dict,
                     path_plddt: dict):
@@ -287,28 +357,55 @@ def score_structure(path_coords: dict,
 
     return score
 
-# def score_complex(path_coords, path_CA_inds, path_CB_inds, path_plddt, ucrosslinks):
-#     structure_score = score_structure(path_coords, 
-#                                       path_CB_inds, 
-#                                       path_plddt)
-#     _,_,crosslink_score = score_crosslinks(ucrosslinks,
-#                                            path_coords,
-#                                            path_CA_inds)
-#     complex_score = structure_score*crosslink_score
-#     return complex_score
 def score_complex(path_coords, path_CA_inds, path_CB_inds, path_plddt, ucrosslinks):
+    """
+    Compute the overall score of a protein complex by combining
+    structural quality and crosslink satisfaction.
+
+    The final score is calculated as the product of:
+    - a structure-based score (geometry and confidence)
+    - a crosslink-based score (distance restraint satisfaction)
+
+    Parameters
+    ----------
+    path_coords : dict
+        Dictionary mapping chain IDs to arrays of atomic coordinates.
+    path_CA_inds : dict
+        Dictionary mapping chain IDs to indices of Cα atoms.
+    path_CB_inds : dict
+        Dictionary mapping chain IDs to indices of Cβ atoms
+        (or Cα for glycine).
+    path_plddt : dict
+        Dictionary mapping chain IDs to per-residue pLDDT confidence scores.
+    ucrosslinks : pd.DataFrame
+        DataFrame containing crosslink information.
+
+    Returns
+    -------
+    float
+        Final complex score combining structural quality and
+        crosslink satisfaction.
+    """
     s_struct = score_structure(path_coords, path_CB_inds, path_plddt)
     _, _, s_xl = score_crosslinks(ucrosslinks, path_coords, path_CA_inds)
-    return s_struct * s_xl # * s_xl # default：no square
+    return s_struct * s_xl
 
 class MonteCarloTreeSearchNode():
-    '''Based on https://ai-boson.github.io/mcts/
-    Each node is a decision - not a chain. Before a new chain is added, the parents
-    therefore have to be checked so that the new chain is not in the path.
-    '''
+    """
+    Node representation for Monte Carlo Tree Search (MCTS)
+    applied to protein complex assembly.
+
+    Each node represents a decision step where a new chain
+    is added to the current assembly path. Nodes track
+    structural data, scoring history, and possible expansions.
+
+    Based on https://ai-boson.github.io/mcts/ and 
+    https://github.com/patrickbryant1/MoLPC 
+    """
     def __init__(self, chain, edge_chain, chain_coords, chain_CA_inds, chain_CB_inds, chain_pdb, chain_plddt,
                 edges, sources, pairdir, plddt_dir, chain_lens, ucrosslinks, outdir,
                 source=None, complex_scores=[0], parent=None, parent_path=[], total_chains=0):
+        # Chain-specific data
         self.chain = chain
         self.edge_chain = edge_chain
         self.chain_coords = chain_coords
@@ -317,7 +414,7 @@ class MonteCarloTreeSearchNode():
         self.pdb = chain_pdb
         self.plddt = chain_plddt
 
-        #Add vars
+        # Global configuration
         self.edges = edges
         self.sources = sources
         self.ucrosslinks = ucrosslinks
@@ -326,26 +423,38 @@ class MonteCarloTreeSearchNode():
         self.chain_lens = chain_lens
         self.outdir = outdir
 
-        self.source = source #where the chain comes from
+        # Source model from which this chain originates
+        self.source = source
 
-        #These are the scores obtained from all rollouts from the current node
-        #These are averaged to obtain a score for how well the current node performs in general
-        self.complex_scores = complex_scores #sum over complex: (avg_if_plddt*log10(n_if_contacts))
+        # Scores from all rollouts passing through this node
+        # Used to estimate the expected value of this node
+        self.complex_scores = complex_scores
 
-        self.parent = parent #Parent node
+        # Tree structure
+        self.parent = parent
         self.path = copy.deepcopy(parent_path) #All nodes up to (and including) the parent
         self.path.append(chain)
         self.children = [] #All nodes branching out from the current
+
+        # Visit statistics
         self._number_of_visits = 0
         self._untried_edges, self._untried_sources = self.get_possible_edges()
         self.total_chains=total_chains
 
-
         return
 
     def get_possible_edges(self):
-        '''Get all possible edges in path
-        '''
+        """
+        Determine all valid edges that can extend the current path.
+
+        Returns
+        -------
+        tuple
+            untried_edges : list
+                Possible edges that introduce a new chain.
+            untried_sources : list
+                Corresponding source models for each edge.
+        """
 
         untried_edges = []
         untried_sources = []
@@ -363,65 +472,57 @@ class MonteCarloTreeSearchNode():
         return untried_edges, untried_sources
 
     def expand(self):
-        '''Expand the path by selecting a random action
-        '''
+        """
+        Expand the tree by adding one new chain using an untried edge.
+
+        Returns
+        -------
+        MonteCarloTreeSearchNode or None
+            Newly created child node if expansion is valid,
+            otherwise None (e.g., due to overlaps).
+        """
         new_edge = self._untried_edges.pop()
         new_source = self._untried_sources.pop()
+
         new_chain = np.setdiff1d(new_edge, self.path)[0]
         edge_chain =  np.setdiff1d(new_edge, new_chain)[0]
-        #Read the pdb file containing the new edge
+
+        # Load the PDB file containing the interacting chain pair
         pdb_folder = os.path.join(self.pairdir,new_source)
         if os.path.exists(pdb_folder+"/"+new_source+'_'+new_edge[0]+'-'+new_source+'_'+new_edge[1]+'.pdb'):
             pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_folder+"/"+new_source+'_'+new_edge[0]+'-'+new_source+'_'+new_edge[1]+'.pdb')
         else:
             pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_folder+"/"+new_source+'_'+new_edge[1]+'-'+new_source+'_'+new_edge[0]+'.pdb')
 
-        #plDDT - for scoring
+        # Load per-atom pLDDT confidence values
         with open(pdb_folder +"/"+ new_source + '_confidences.json', 'r') as f:
             conf = json.load(f)
         source_plDDT = np.array(conf['atom_plddts'])
 
+        # Extract pLDDT values for the new chain
         si = 0
         for p_chain in new_source.split('_')[-1]:
-            n_atoms = len(pdb_chains[p_chain])  # ★ 新增：该链的原子数
+            n_atoms = len(pdb_chains[p_chain])
             if p_chain == new_chain:
                 new_chain_plddt = source_plDDT[si : si + n_atoms]
             si += n_atoms
 
-        #Align the overlapping chains
-        #Get the coords for the other chain in the edge
+        # Superimpose the new structure onto the existing assembly
         edge_node = self
         while edge_node.chain!=edge_chain:
             edge_node = edge_node.parent
 
 
-        #Set the coordinates to be superimposed.
-        #coords will be put on top of reference_coords.
+        # Superimpose the new structure onto the existing assembly
         sup = SVDSuperimposer()
-        sup.set(edge_node.chain_coords,np.array(chain_coords[edge_chain])) #(reference_coords, coords)
+        sup.set(edge_node.chain_coords,np.array(chain_coords[edge_chain]))
         sup.run()
         rot, tran = sup.get_rotran()
 
         #Rotate coords from new chain to its new relative position/orientation
         rotated_coords = np.dot(np.array(chain_coords[new_chain]), rot) + tran
 
-        #Get all chain coords and CA inds for the current path
-        # path_coords = []
-        # path_CA_inds =[]
-        # path_CB_inds = []
-        # path_plddt = []
-        # path_node = self
-        # ucrosslinks = self.ucrosslinks
-        # while path_node.parent:
-        #     path_coords.append(path_node.chain_coords)
-        #     path_CA_inds.append(path_node.CA_inds)
-        #     path_CB_inds.append(path_node.CB_inds)
-        #     path_plddt.append(path_node.plddt)
-        #     path_node = path_node.parent
-        # path_coords.append(path_node.chain_coords) #Last - when no parent = root
-        # path_CA_inds.append(path_node.CA_inds)
-        # path_CB_inds.append(path_node.CB_inds)
-        # path_plddt.append(path_node.plddt)
+        # Gather current path data
         path_coords = {}
         path_CA_inds = {}
         path_CB_inds = {}
@@ -437,19 +538,19 @@ class MonteCarloTreeSearchNode():
             path_node = path_node.parent
 
 
-        #Check overlaps
+        # Check for steric overlaps
         overlap = check_overlaps(path_coords,path_CA_inds,rotated_coords,chain_CA_inds[new_chain])
 
-        #If no overlap - score and create a child node
+        #If no overlap
         if overlap==False:
-            #Add the new chain
-            # path_coords.append(rotated_coords), path_CB_inds.append(chain_CB_inds[new_chain]), path_plddt.append(new_chain_plddt)
+            # Add the new chain and score the complex
             path_coords[new_chain] = rotated_coords
             path_CA_inds[new_chain] = np.array(chain_CA_inds[new_chain])
             path_CB_inds[new_chain] = np.array(chain_CB_inds[new_chain])
             path_plddt[new_chain] = new_chain_plddt
+
             complex_score = score_complex(path_coords, path_CA_inds, path_CB_inds, path_plddt, ucrosslinks)
-            #Add to all complex scores
+
             child_node = MonteCarloTreeSearchNode(new_chain, edge_chain, rotated_coords, np.array(chain_CA_inds[new_chain]),
                     np.array(chain_CB_inds[new_chain]), np.array(pdb_chains[new_chain]), new_chain_plddt,
                     self.edges, self.sources, self.pairdir, self.plddt_dir, self.chain_lens, self.ucrosslinks, self.outdir,
@@ -464,33 +565,18 @@ class MonteCarloTreeSearchNode():
 
 
     def rollout(self):
-        '''Simulate an assembly path until
-        1. all chains are in complex
-        2. an overlap is found
-        '''
+        """
+        Perform a random simulation from the current node until
+        1. all chains are added or 2. an overlap occurs.
+        
+        Returns
+        -------
+        float
+            Final complex score of the rollout.
+        """
         overlap = False
-
-
-        #Get all chain coords, CA,CB inds and plddt for the current path
         rollout_path = []
-        # path_coords = []
-        # path_CA_inds =[]
-        # path_CB_inds = []
-        # path_plddt = []
-        # path_node = self
-        # ucrosslinks = self.ucrosslinks
-        # while path_node.parent:
-        #     rollout_path.append(path_node.chain)
-        #     path_coords.append(path_node.chain_coords)
-        #     path_CA_inds.append(path_node.CA_inds)
-        #     path_CB_inds.append(path_node.CB_inds)
-        #     path_plddt.append(path_node.plddt)
-        #     path_node = path_node.parent
-        # rollout_path.append(path_node.chain)
-        # path_coords.append(path_node.chain_coords) #Last - when no parent = root
-        # path_CA_inds.append(path_node.CA_inds)
-        # path_CB_inds.append(path_node.CB_inds)
-        # path_plddt.append(path_node.plddt)
+        
         path_coords = {}
         path_CA_inds = {}
         path_CB_inds = {}
@@ -498,6 +584,7 @@ class MonteCarloTreeSearchNode():
 
         path_node = self
         ucrosslinks = self.ucrosslinks
+
         while path_node.parent:
             rollout_path.append(path_node.chain)
             path_coords[path_node.chain] = path_node.chain_coords
@@ -507,9 +594,10 @@ class MonteCarloTreeSearchNode():
             path_node = path_node.parent
 
         def get_possible_edges(path):
-            '''Get all possible edges in path
-            Can't pass self - which is why this has to be defined here
-            '''
+            """
+            Get all valid edges that can extend a given path.
+            Defined locally because self cannot be passed.
+            """
 
             untried_edges = []
             untried_sources = []
@@ -517,7 +605,7 @@ class MonteCarloTreeSearchNode():
                 #Get all edges to the current node
                 cedges = self.edges[np.argwhere(self.edges==chain)[:,0]]
                 csources = self.sources[np.argwhere(self.edges==chain)[:,0]]
-                #Go through all edges and see that the new connection is not in path
+                # Go through all edges and see that the new connection is not in path
                 for i in range(len(cedges)):
                     diff = np.setdiff1d(cedges[i],path)
                     if len(diff)>0:
@@ -560,16 +648,11 @@ class MonteCarloTreeSearchNode():
                     new_chain_plddt = source_plDDT[si : si + n_atoms]
                 si += n_atoms
 
-            #Align the overlapping chains
-            #Get the coords for the other chain in the edge
-            # edge_ind = np.argwhere(np.array(rollout_path)==edge_chain)[0][0]
-            # #Set the coordinates to be superimposed.
-            # #coords will be put on top of reference_coords.
-            # sup = SVDSuperimposer()
-            # sup.set(path_coords[edge_ind],np.array(chain_coords[edge_chain])) #(reference_coords, coords)
+            # Align the overlapping chains
+            # Get the coords for the other chain in the edge
             sup = SVDSuperimposer()
             sup.set(
-                path_coords[edge_chain],              # dict 用 key 访问
+                path_coords[edge_chain],
                 np.array(chain_coords[edge_chain])
             )
             sup.run()
@@ -591,10 +674,7 @@ class MonteCarloTreeSearchNode():
             #If no overlap - score and create a child node
             if overlap==False:
                 #Add the new chain
-                rollout_path.append(new_chain), 
-                # path_coords.append(rotated_coords),
-                # path_CA_inds.append(chain_CA_inds[new_chain])
-                # path_CB_inds.append(chain_CB_inds[new_chain]), path_plddt.append(new_chain_plddt)
+                rollout_path.append(new_chain)
                 path_coords[new_chain] = rotated_coords
                 path_CA_inds[new_chain] = np.array(chain_CA_inds[new_chain])
                 path_CB_inds[new_chain] = np.array(chain_CB_inds[new_chain])
@@ -609,8 +689,9 @@ class MonteCarloTreeSearchNode():
 
 
     def back_prop(self, rollout_score):
-        '''Update the previous nodes in the path
-        '''
+        """
+        Backpropagate a rollout score up the tree.
+        """
 
         self._number_of_visits += 1
         self.complex_scores.append(rollout_score)
@@ -619,24 +700,18 @@ class MonteCarloTreeSearchNode():
             self.parent.back_prop(rollout_score)
 
     def best_child(self):
-        '''Calculate the UCB
-
-        Vi is the average reward/value of all nodes beneath this node (sum of interface scores)
-        N is the number of times the parent node has been visited, and
-        ni is the number of times the child node i has been visited
-
-        The first component of the formula above corresponds to exploitation;
-        it is high for moves with high average win ratio.
-        The second component corresponds to exploration; it is high for moves with few simulations.
-        '''
+        """
+        Select the child node with the highest UCB score.
+        """
 
         choices_weights = [(np.average(c.complex_scores) + 2 * np.sqrt(np.log(c.parent._number_of_visits+1e-3) / (c._number_of_visits+1e-12))) for c in self.children]
 
         return self.children[np.argmax(choices_weights)]
 
     def tree_policy(self):
-        '''Select a node to run rollout
-        '''
+        """
+        Select a node for expansion or rollout using the tree policy.
+        """
         current_node = self
         dead_end = False
         c=0
@@ -652,8 +727,14 @@ class MonteCarloTreeSearchNode():
         return current_node, dead_end
 
     def best_path(self):
-        '''Get the best path to take
-        '''
+        """
+        Run MCTS until a full complex assembly is obtained.
+
+        Returns
+        -------
+        MonteCarloTreeSearchNode
+            Final node corresponding to the best assembly path.
+        """
         nchains_in_path = 0
         n_total_chains = self.total_chains
         while nchains_in_path<n_total_chains: #add stop if there are no more options
@@ -673,6 +754,25 @@ class MonteCarloTreeSearchNode():
 
 
 def build_path_dict_from_node(node):
+    """
+    Construct coordinate and Cα index dictionaries from a terminal MCTS node.
+
+    The function traverses the node's ancestry up to the root and
+    collects chain coordinates and Cα indices for the full assembly path.
+
+    Parameters
+    ----------
+    node : MonteCarloTreeSearchNode
+        Terminal node representing a complete or partial assembly path.
+
+    Returns
+    -------
+    tuple
+        path_coords : dict
+            Mapping from chain ID to atomic coordinates.
+        path_CA_inds : dict
+            Mapping from chain ID to Cα atom indices.
+    """
     path_coords = {}
     path_CA_inds = {}
 
@@ -686,7 +786,34 @@ def build_path_dict_from_node(node):
 
 def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
     """
-    对每个链作为起点都执行一次 MCTS，最后选择总得分最高的路径
+    Run Monte Carlo Tree Search (MCTS) starting from each chain as a root
+    and select the globally best assembly path.
+
+    For each chain in the interaction network, the function:
+    1. Initializes an MCTS tree with that chain as the root
+    2. Runs MCTS to assemble a full complex
+    3. Scores the resulting structure
+    4. Keeps track of the best-scoring result globally
+
+    Parameters
+    ----------
+    edges : np.ndarray
+        Array of interacting chain pairs.
+    sources : np.ndarray
+        Array indicating the source model for each edge.
+    pairdir : str
+        Directory containing pairwise PDB models.
+    chain_lens : dict
+        Mapping from chain ID to sequence length.
+    ucrosslinks : pd.DataFrame
+        DataFrame containing unique crosslink restraints.
+    outdir : str
+        Output directory for logs and results.
+
+    Returns
+    -------
+    MonteCarloTreeSearchNode
+        Node corresponding to the best global assembly path.
     """
 
     nodes = np.unique(edges)
@@ -698,12 +825,12 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
 
     logger.info(f"Running MCTS {num_nodes} times (each node as root)...")
 
-    # === 遍历每个链作为 root ===
+    # Iterate over each chain as root
     for root_chain in nodes:
         logger.info(" ")
         logger.info(f"=== Running MCTS with root = {root_chain} ===")
 
-        # 找到任意一条与 root_chain 有关联的 edge/pair 用于读取初始 pdb
+        # Find any edge connected to the root chain to initialize the structure
         idx = np.argwhere(edges == root_chain)
         if len(idx) == 0:
             logger.info(f"No edges found for chain {root_chain}, skipping.")
@@ -714,7 +841,7 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
         ssr = sources[row]
         start_pairdir = os.path.join(pairdir, ssr + "/")
 
-        # 找到对应 pdb 文件
+        # Locate the correct PDB file
         pdb_file_1 = f"{start_pairdir}{ssr}_{sps[0]}-{ssr}_{sps[1]}.pdb"
         pdb_file_2 = f"{start_pairdir}{ssr}_{sps[1]}-{ssr}_{sps[0]}.pdb"
 
@@ -725,12 +852,12 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
 
         pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_file)
 
-        # === 读取 atom-level plDDT ===
+        # Load atom-level pLDDT scores
         with open(start_pairdir + ssr + '_confidences.json', 'r') as f:
             conf = json.load(f)
         source_plDDT = np.array(conf['atom_plddts'])
 
-        # === 按原子数量切片 plDDT（适配 AF3）===
+        # Slice pLDDT by atom counts (AF3-compatible)
         si = 0
         for ch in ssr.split('_')[-1]:
             n_atoms = len(pdb_chains[ch])
@@ -738,7 +865,7 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
                 root_chain_plddt = source_plDDT[si:si + n_atoms]
             si += n_atoms
 
-        # === 构建 root node ===
+        # Initialize root node
         root = MonteCarloTreeSearchNode(
             root_chain, '', np.array(chain_coords[root_chain]),
             np.array(chain_CA_inds[root_chain]), np.array(chain_CB_inds[root_chain]),
@@ -749,13 +876,13 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
             parent=None, parent_path=[], total_chains=num_nodes
         )
 
-        # === 跑 MCTS ===
+        # Run MCTS
         best_path = root.best_path()
 
-        # === MCTS 搜索阶段评分（用于比较 root）===
+        # Score from MCTS rollouts
         final_score = np.mean(best_path.complex_scores)
 
-        # === 用最终完整结构计算 crosslink 精确评分 ===
+        # Compute final crosslink score using full structure
         final_path_coords, final_path_CA_inds = build_path_dict_from_node(best_path)
 
         score_total, score_inter, score_final = score_crosslinks(
@@ -772,7 +899,7 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
             f"XL_final = {score_final:.3f}"
         )
 
-        # === 记录全局最佳 ===
+        # Track global best
         if final_score > best_global_score:
             best_global_score = final_score
             best_global_path = best_path
@@ -781,7 +908,7 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
     logger.info(" ")
     logger.info(f"===== BEST GLOBAL ROOT = {best_global_root}, SCORE = {best_global_score:.3f} =====")
 
-    # === 计算最终结构的 crosslink score ===
+    # Final crosslink score for the best assembly
     final_path_coords, final_path_CA_inds = build_path_dict_from_node(best_global_path)
 
     score_total, score_inter, score_final = score_crosslinks(
@@ -800,12 +927,19 @@ def find_paths(edges, sources, pairdir, chain_lens, ucrosslinks, outdir):
 
 
 def write_pdb(best_path, outdir):
-    '''Write all chains into one single pdb file
-    Update the coords to the roto-translated ones
-    record['x'] = float(line[30:38])
-    record['y'] = float(line[38:46])
-    record['z'] = float(line[46:54])
-    '''
+    """
+    Write the assembled complex into a single PDB file.
+
+    Coordinates are updated to reflect the final rotated/transformed
+    positions obtained during MCTS.
+
+    Parameters
+    ----------
+    best_path : MonteCarloTreeSearchNode
+        Terminal node representing the best assembly.
+    outdir : str
+        Output directory for the PDB file.
+    """
 
     current_node = best_path
     #Open a file to write to
@@ -840,11 +974,20 @@ def write_pdb(best_path, outdir):
             file.write(outline)
 
 
-
-
 def create_path_df(best_path, outdir):
-    '''Create df of all complete paths
-    '''
+    """
+    Create and save a CSV file describing the optimal assembly path.
+
+    The file records the order of chain additions, their connecting
+    chains, and the source model for each step.
+
+    Parameters
+    ----------
+    best_path : MonteCarloTreeSearchNode
+        Terminal node of the optimal assembly.
+    outdir : str
+        Output directory for the CSV file.
+    """
     #Create a df of all paths
     path_df = {'Chain':[], 'Edge_chain':[], 'Source':[]}
 
@@ -867,6 +1010,18 @@ def create_path_df(best_path, outdir):
 #################MAIN####################
 
 def main(args):
+    """
+    Main execution function for MCTS-based complex assembly.
+
+    Loads input data, runs MCTS to find the optimal assembly path,
+    writes the final PDB structure, and saves path metadata.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line or debug arguments.
+    """
+
     #Data
     network = pd.read_csv(args.network)
     pairdir = args.pairdir
@@ -899,8 +1054,8 @@ def main(args):
     create_path_df(best_path, outdir)
 
 if __name__ == "__main__":
-    # ====== 可选：调试模式（无命令行时使用） ======
-    # 如果你希望在调试时手动指定参数，请修改以下路径：
+    # ===== Optional: Debug mode (used when no command-line arguments are provided) =====
+    # Modify the paths below if you want to run locally without CLI arguments
     debug_args = argparse.Namespace(
         network=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\network.csv",
         pairdir=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\pairs/",
@@ -909,7 +1064,7 @@ if __name__ == "__main__":
         outdir=r"N:\08_NK_structure_prediction\data\CORVET_complex\assembled_complex\output/",
     )
 
-    # ====== 如果命令行有参数，则使用命令行参数 ======
+    # ===== If command-line arguments are provided, use them =====
     parser = argparse.ArgumentParser(
         description='Find optimal paths by Monte Carlo Tree Search.'
     )
@@ -921,23 +1076,12 @@ if __name__ == "__main__":
 
     try:
         cmd_args = parser.parse_args()
-        # 若命令行没有给参数，则 fallback 到 debug_args
         if all(v is None for v in vars(cmd_args).values()):
             logger.info("No command-line arguments detected — using debug arguments.")
             main(debug_args)
         else:
-            # 使用命令行参数
             main(cmd_args)
     except:
-        # parse_args 出现异常则使用 debug 参数
         logger.info("Argument parsing failed — using debug arguments.")
         main(debug_args)
     pass
-
-    # pdb_file = r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex\output\merged.pdb"
-    # pdb_chains, chain_coords, chain_CA_inds, chain_CB_inds = read_pdb(pdb_file)
-    # ucrosslinks=pd.read_csv(r"N:\08_NK_structure_prediction\data\LRBAandSNARE\assembled_complex\ucrosslinks.csv")
-    # crosslink_score = score_crosslinks(ucrosslinks,
-    #                                    chain_coords,
-    #                                    chain_CA_inds)
-    # print(crosslink_score)
