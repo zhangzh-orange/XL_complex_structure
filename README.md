@@ -99,6 +99,80 @@ File formats:
 | ...       | ...       | ...    | ...    | ...                          | ...                         | ...           | ...           | ...      | ...      |
 
 - `trimer.csv`: Generated from interact_map (see complex_assembly_pipeline.ipynb).
+
+最终输出json应当是如下格式：
+
+```json
+{
+    "name": "EXOC1_EXOC2_EXOC3_0",
+    "modelSeeds": [
+        1
+    ],
+    "sequences": [
+        {
+            "protein": {
+                "id": "A",
+                "sequence": "MTAIKHALQRDIFTPNDERLLSIVNVCKAGKKKKNCFLCAT..."
+            }
+        },
+        {
+            "protein": {
+                "id": "B",
+                "sequence": "MSRSRQPPLVTGISPNEGIPWTKVTIRGENLGTGPTDLIGL..."
+            }
+        },
+        {
+            "protein": {
+                "id": "C",
+                "sequence": "MKETDREAVATAVQRVAGMLQRPDQLDKVEQYRRREARKKA..."
+            }
+        }
+    ],
+    "dialect": "alphafold3",
+    "version": 1,
+    "crosslinks": [
+        {
+            "name": "azide-A-DSBSO",
+            "residue_pairs": [
+                [
+                    [
+                        "A",
+                        60
+                    ],
+                    [
+                        "C",
+                        28
+                    ]
+                ],
+                [
+                    [
+                        "A",
+                        5
+                    ],
+                    [
+                        "B",
+                        310
+                    ]
+                ],
+                [
+                    [
+                        "B",
+                        68
+                    ],
+                    [
+                        "C",
+                        221
+                    ]
+                ],
+                ...
+            ]
+        }
+    ]
+}
+```
+
+
+
 2. Run AlphaFold3 / AF3X Predictions
 - Installation and configuration instructions:
   
