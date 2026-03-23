@@ -1,0 +1,11 @@
+# XL_MOPLC — Python dependencies
+# Install with:  pip install -r requirements.txt
+# Requires Python >= 3.10
+
+biopython>=1.81
+numpy>=1.24
+pandas>=2.0
+scipy>=1.11
+networkx>=3.0
+matplotlib>=3.7
+openpyxl>=3.1       # reading gene_list.xlsx
