@@ -915,12 +915,18 @@ class MonteCarloTreeSearchNode:
             Terminal node representing the best assembly path found.
         """
         n_placed = 0
+        v = self
         while n_placed < self.total_chains:
-            v, dead_end = self.tree_policy()
-            if v is None:
-                break
+            new_v, dead_end = self.tree_policy()
+            if new_v is None:
+                # The attempted edge caused a steric clash; it has already
+                # been removed from its node's untried-edge list inside
+                # expand(), so retry tree_policy() to try another
+                # candidate instead of discarding the search so far.
+                continue
             if dead_end:
                 break
+            v = new_v
             rollout_score = v.rollout()
             v.back_prop(rollout_score)
             n_placed = len(v.path)
